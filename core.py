@@ -1,6 +1,8 @@
 """Photo access and non-destructive metadata for Contact Sheet."""
 from __future__ import annotations
 import io
+import json
+from iptc import FIELDS
 import os
 import shutil
 import tempfile
@@ -12,7 +14,11 @@ RAWS = {'.nef', '.nrw', '.cr2', '.cr3', '.arw', '.raf', '.dng', '.orf', '.rw2', 
 FORMATS = RAWS | {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'}
 NS = {'x': 'adobe:ns:meta/', 'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
       'dc': 'http://purl.org/dc/elements/1.1/', 'xmp': 'http://ns.adobe.com/xap/1.0/',
-      'photoshop': 'http://ns.adobe.com/photoshop/1.0/'}
+      'photoshop': 'http://ns.adobe.com/photoshop/1.0/',
+      'iptc': 'http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/',
+      'ext': 'http://iptc.org/std/Iptc4xmpExt/2008-02-29/',
+      'plus': 'http://ns.useplus.org/ldf/xmp/1.0/',
+      'rights': 'http://ns.adobe.com/xap/1.0/rights/'}
 for prefix, uri in NS.items():
     ET.register_namespace(prefix, uri)
 def tag(prefix, name):
@@ -59,6 +65,30 @@ def load_metadata(path):
             node = desc.find(tag('dc', 'subject'))
             if node is not None:
                 data['keywords'] = [i.text for i in node.iter(tag('rdf', 'li')) if i.text]
+        for key, (_, _, prefix, name, kind) in FIELDS.items():
+            if key in ('creator', 'copyright', 'keywords'): continue
+            for desc in root.iter(tag('rdf', 'Description')):
+                parent = desc.find(tag('iptc', 'CreatorContactInfo')) if kind == 'contact' else desc
+                if parent is None: continue
+                node = parent.find(tag(prefix, name))
+                value = parent.get(tag(prefix, name))
+                if node is None and value is None: continue
+                if kind == 'json':
+                    rows = []
+                    for li in node.findall('./' + tag('rdf','Bag') + '/' + tag('rdf','li')):
+                        row = {k.split('}')[-1]: v for k, v in li.attrib.items() if k != tag('rdf','parseType')}
+                        for child in li:
+                            items = list(child.iter(tag('rdf','li')))
+                            row[child.tag.split('}')[-1]] = [i.text or '' for i in items] if items else child.text or ''
+                        rows.append(row)
+                    data[key] = json.dumps(rows, ensure_ascii=False)
+                elif kind in ('Bag','Seq','Alt') and node is not None:
+                    items = list(node.iter(tag('rdf','li')))
+                    if kind == 'Alt':
+                        default = next((i for i in items if i.get('{http://www.w3.org/XML/1998/namespace}lang') == 'x-default'), None)
+                        data[key] = (default if default is not None else items[0]).text or '' if items else node.text or ''
+                    else: data[key] = '; '.join(i.text or '' for i in items)
+                else: data[key] = value if value is not None else node.text or ''
         return data
     # Read common legacy IPTC fields from JPEG/TIFF originals, without writing them.
     if Path(path).suffix.lower() not in RAWS:
@@ -115,6 +145,47 @@ def save_metadata(path, data):
     bag = ET.SubElement(ET.SubElement(desc, tag('dc', 'subject')), tag('rdf', 'Bag'))
     for word in data.get('keywords', []):
         ET.SubElement(bag, tag('rdf', 'li')).text = word
+    for key, (_, _, prefix, name, kind) in FIELDS.items():
+        if key not in data or key in ('creator','copyright','keywords'): continue
+        value = data[key]
+        prop = tag(prefix, name)
+        parent = desc
+        if kind == 'contact':
+            parent = desc.find(tag('iptc','CreatorContactInfo'))
+            if parent is None: parent = ET.SubElement(desc, tag('iptc','CreatorContactInfo'), {tag('rdf','parseType'): 'Resource'})
+            for d in descriptions:
+                contact = d.find(tag('iptc','CreatorContactInfo'))
+                if contact is not None:
+                    contact.attrib.pop(prop, None)
+                    for child in list(contact):
+                        if child.tag == prop: contact.remove(child)
+        else:
+            for d in descriptions:
+                d.attrib.pop(prop, None)
+                for child in list(d):
+                    if child.tag == prop: d.remove(child)
+        if not value: continue
+        node = ET.SubElement(parent, prop)
+        if kind == 'json':
+            rows = json.loads(value)
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise ValueError(f'{key} must be a JSON list of objects.')
+            bag = ET.SubElement(node, tag('rdf','Bag'))
+            for row in rows:
+                li = ET.SubElement(bag, tag('rdf','li'), {tag('rdf','parseType'): 'Resource'})
+                for field, item in row.items():
+                    child = ET.SubElement(li, tag(prefix, field))
+                    if isinstance(item, list):
+                        seq = ET.SubElement(child, tag('rdf','Seq'))
+                        for entry in item: ET.SubElement(seq,tag('rdf','li')).text = str(entry)
+                    else: child.text = str(item)
+        elif kind in ('Bag','Seq','Alt'):
+            container = ET.SubElement(node, tag('rdf',kind))
+            for item in ([value] if kind == 'Alt' else [x.strip() for x in value.split(';') if x.strip()]):
+                li = ET.SubElement(container, tag('rdf','li'))
+                if kind == 'Alt': li.set('{http://www.w3.org/XML/1998/namespace}lang','x-default')
+                li.text = item
+        else: node.text = value
     fd, temp = tempfile.mkstemp(prefix='.contact-sheet-', suffix='.tmp', dir=target.parent)
     try:
         with os.fdopen(fd, 'wb') as output:

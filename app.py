@@ -1,6 +1,7 @@
 """Contact Sheet: a local, open-source culling and captioning desktop app."""
 from __future__ import annotations
 import csv
+import json
 import queue
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from tkinter import ttk, filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from PIL import ImageTk
+from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
 from selection import PhotoSelection
 from editors import saved_editor, remember_editor, open_in_editor
 from core import photos, preview, load_metadata, save_metadata, export_photos, empty_metadata
@@ -116,16 +118,17 @@ class ContactSheet(tk.Tk):
         self.rating_text = ttk.Label(center, text='0–5: stars   P: pick   X: reject   U: clear   Z: zoom')
         self.rating_text.pack(anchor='w')
         ttk.Label(right, text='CAPTION & METADATA', font=('Helvetica', 12, 'bold')).pack(anchor='w')
-        ttk.Label(right, text='Caption', padding=(0, 14, 0, 4)).pack(anchor='w')
-        self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#f6f6f6', fg='#202020', insertbackground='#202020', undo=True, relief='flat', padx=8, pady=8)
+        ttk.Button(right, text='Edit IPTC fields…', command=self.edit_iptc).pack(fill='x', pady=8)
+        ttk.Label(right, text='Description / caption').pack(anchor='w')
+        self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#f6f6f6', fg='#202020', undo=True)
         self.caption.pack(fill='x')
         self.caption.bind('<<Modified>>', self.modified)
         self.fields = {}
-        for name, title in [('creator', 'Photographer / byline'), ('copyright', 'Copyright'), ('keywords', 'Keywords (comma-separated)')]:
-            ttk.Label(right, text=title, padding=(0, 12, 0, 4)).pack(anchor='w')
+        for name, title in [('creator','Photographer / byline'), ('copyright','Copyright'), ('keywords','Keywords (comma-separated)')]:
+            ttk.Label(right, text=title, padding=(0,12,0,4)).pack(anchor='w')
             variable = tk.StringVar()
-            ttk.Entry(right, textvariable=variable).pack(fill='x')
-            variable.trace_add('write', lambda *a: self.mark_dirty())
+            ttk.Entry(right,textvariable=variable).pack(fill='x')
+            variable.trace_add('write',lambda *a: self.mark_dirty())
             self.fields[name] = variable
         ttk.Button(right, text='Save caption  ⌘/Ctrl+S', command=self.save).pack(fill='x', pady=(18, 8))
         ttk.Button(right, text='Apply these fields to picks…', command=self.batch_caption).pack(fill='x')
@@ -134,6 +137,107 @@ class ContactSheet(tk.Tk):
         ttk.Button(right, text='Change editor…', command=self.choose_editor).pack(fill='x')
         ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nExport copies selected photos or picks.\nOpen in app sends selected originals.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
         ttk.Label(self, textvariable=self.status, padding=8).pack(fill='x')
+
+    def edit_iptc(self):
+        if self.current is None:
+            messagebox.showinfo('Choose a photo', 'Open a folder and select a photo first.'); return
+        if not self.save(): return
+        dialog = tk.Toplevel(self)
+        dialog.title('IPTC metadata — ' + self.current.name)
+        dialog.geometry('900x720')
+        dialog.transient(self)
+        dialog.grab_set()
+        notebook = ttk.Notebook(dialog)
+        notebook.pack(fill='both', expand=True, padx=12,pady=12)
+        variables = {}
+        for group, fields in GROUPS.items():
+            tab = ttk.Frame(notebook); notebook.add(tab,text=group)
+            canvas = tk.Canvas(tab,bg='#cccccc',highlightthickness=0)
+            scrollbar = ttk.Scrollbar(tab,orient='vertical',command=canvas.yview)
+            canvas.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side='right',fill='y'); canvas.pack(side='left',fill='both',expand=True)
+            form = ttk.Frame(canvas,padding=14)
+            window = canvas.create_window(0,0,window=form,anchor='nw')
+            form.bind('<Configure>',lambda e,c=canvas: c.configure(scrollregion=c.bbox('all')))
+            canvas.bind('<Configure>',lambda e,c=canvas,w=window: c.itemconfigure(w,width=e.width))
+            ttk.Label(form,text='Lists: separate values with semicolons. Use Edit rows for repeated entries.',wraplength=750).pack(anchor='w',pady=(0,10))
+            for key,title,prefix,prop,kind in fields:
+                ttk.Label(form,text=title).pack(anchor='w',pady=(10,3))
+                value = self.metadata[self.current].get(key,'')
+                if key == 'keywords': value = '; '.join(value)
+                variable = tk.StringVar(value=value); variables[key] = variable
+                ttk.Entry(form,textvariable=variable).pack(fill='x')
+                if kind == 'json':
+                    ttk.Button(form,text='Edit rows…',command=lambda k=key,v=variable: self.edit_metadata_rows(dialog,k,v)).pack(anchor='w',pady=4)
+        footer = ttk.Frame(dialog,padding=12); footer.pack(fill='x')
+        def commit():
+            data = dict(self.metadata[self.current])
+            for key,var in variables.items():
+                data[key] = [x.strip() for x in var.get().split(';') if x.strip()] if key == 'keywords' else var.get()
+            try: save_metadata(self.current,data)
+            except Exception as exc:
+                messagebox.showerror('Could not save metadata',str(exc),parent=dialog); return
+            self.metadata[self.current] = data
+            for name,var in self.fields.items(): var.set(', '.join(data[name]) if name == 'keywords' else data[name])
+            self.dirty = False
+            self.status.set('Saved IPTC metadata for '+self.current.name)
+            dialog.destroy()
+        ttk.Button(footer,text='Save metadata',command=commit).pack(side='right')
+        ttk.Button(footer,text='Cancel',command=dialog.destroy).pack(side='right',padx=8)
+
+    def edit_metadata_rows(self, parent, key, variable):
+        try:
+            rows = json.loads(variable.get() or '[]')
+            if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows): raise ValueError('Expected a list of entries.')
+        except ValueError as exc:
+            messagebox.showerror('Invalid entries',str(exc),parent=parent); return
+        window = tk.Toplevel(parent)
+        window.title(FIELDS[key][1]); window.geometry('750x600'); window.transient(parent); window.grab_set()
+        columns = [c.strip() for c in STRUCTURE_HINTS[key].split(',')]
+        listbox = tk.Listbox(window,height=7); listbox.pack(fill='x',padx=12,pady=10)
+        form = ttk.Frame(window,padding=12); form.pack(fill='both',expand=True)
+        entries = {}
+        for column in columns:
+            ttk.Label(form,text=column).pack(anchor='w')
+            var=tk.StringVar(); entries[column]=var
+            ttk.Entry(form,textvariable=var).pack(fill='x',pady=(0,5))
+        selected = [None]
+        def refresh():
+            listbox.delete(0,'end')
+            for i,row in enumerate(rows): listbox.insert('end',str(i+1)+': '+str(next(iter(row.values()),'Empty entry')))
+        def store_row():
+            index=selected[0]
+            if index is None: return
+            for column,var in entries.items():
+                value=var.get()
+                if isinstance(rows[index].get(column),list): value=[x.strip() for x in value.split(';') if x.strip()]
+                if value: rows[index][column]=value
+                else: rows[index].pop(column,None)
+        def select(event=None):
+            choice=listbox.curselection()
+            if not choice: return
+            store_row(); selected[0]=choice[0]
+            for column,var in entries.items():
+                value=rows[selected[0]].get(column,'')
+                var.set('; '.join(value) if isinstance(value,list) else value)
+        def add():
+            store_row(); rows.append({}); selected[0]=len(rows)-1; refresh()
+            listbox.selection_set(selected[0])
+            for var in entries.values(): var.set('')
+        def remove():
+            if selected[0] is not None: rows.pop(selected[0]); selected[0]=None
+            refresh()
+            for var in entries.values(): var.set('')
+        def done():
+            store_row(); variable.set(json.dumps(rows,ensure_ascii=False) if rows else '')
+            window.destroy(); parent.grab_set()
+        listbox.bind('<<ListboxSelect>>',select)
+        buttons=ttk.Frame(window,padding=12); buttons.pack(fill='x')
+        ttk.Button(buttons,text='Add',command=add).pack(side='left')
+        ttk.Button(buttons,text='Remove',command=remove).pack(side='left',padx=6)
+        ttk.Button(buttons,text='Use entries',command=done).pack(side='right')
+        refresh()
+        if rows: listbox.selection_set(0); select()
 
     def _bind_shortcuts(self):
         for key, action in [('<Left>', lambda: self.move(-1)), ('<Right>', lambda: self.move(1)), ('<p>', lambda: self.rate(label='Green')), ('<x>', lambda: self.rate(-1, '')), ('<u>', lambda: self.rate(0, '')), ('<z>', self.toggle_zoom)]:

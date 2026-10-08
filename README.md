@@ -107,3 +107,11 @@ python3 -m compileall -q app.py core.py
 Core tests cover metadata round-trips, original-image preservation, unknown-property preservation, RAW/JPEG sidecar separation, malformed XML handling, invalid ratings, reject/clear persistence, export copies and collision refusal, EXIF orientation, and preview sizing. A display-dependent UI smoke test skips on headless Linux and runs in the desktop build workflow.
 
 Known first-version gaps: no dual-destination ingest, file renaming, code replacements, FTP delivery, embedded metadata writing, GPS/date editor, side-by-side comparison, HEIC, video, recursive catalog, color-managed preview guarantee, or full-resolution RAW rendering. Large folder metadata scans run in the background; batch caption updates currently run on the UI thread. Thumbnail caching is bounded but not persisted between sessions.
+
+## Version 0.2
+
+Command/Control-click selects several photos; Shift-click selects a range. Use Export selected to copy photos and their XMP sidecars, or Open in app to send originals to Photoshop or another installed editor.
+
+Edit IPTC fields opens eight scrollable sections. Repeated entries such as locations, artwork, image creators, registry entries and licensors have an Edit rows form. List fields use semicolons. Enumerated rights and media properties accept standard PLUS or IPTC URI values. Metadata is stored in XMP sidecars; originals are never rewritten.
+
+Download Apple Silicon, Intel Mac, Windows or Linux builds from the v0.2.0 release once the build workflow finishes. Mac: extract the ZIP and open ContactSheet.app. Windows: extract the entire ZIP and open ContactSheet.exe inside its folder. Linux: extract the tar.gz and run ContactSheet/ContactSheet.
