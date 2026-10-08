@@ -66,7 +66,7 @@ def _ftp_one(path, dest, directory):
     with ftp_class() as client:
         client.connect(dest.host, port, timeout=30)
         client.login(dest.username, dest.password)
-        if isinstance(client, FTP_TLS):
+        if dest.protocol == 'FTPS':
             client.prot_p()  # encrypt the data channel as well as the login
         client.set_pasv(True)
         if directory: client.cwd(directory)
