@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: macos-14
             label: macOS-Apple-Silicon
             rawpy: 0.27.1
             icon: icns
