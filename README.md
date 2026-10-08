@@ -90,7 +90,7 @@ git push -u origin main
 ```
 
 3. Open **Actions → Test and build desktop apps**. A push to `main` starts the workflow, or use **Run workflow**.
-4. After a successful run, download the matching artifact: **macOS-Apple-Silicon**, **macOS-Intel**, or **Windows**. Mac artifacts contain an additional app ZIP; unpack that ZIP to get `ContactSheet.app`. Windows artifacts contain `ContactSheet.exe` and its supporting files; keep the whole folder together.
+4. After a successful run, download the matching artifact: **macOS-Apple-Silicon**, **macOS-Intel**, . Mac artifacts contain an additional app ZIP; unpack that ZIP to get `ContactSheet.app`. Windows source can be run with the included launcher; standalone Windows builds are not included in this initial Mac release.
 
 GitHub Actions builds on each operating system using PyInstaller. The workflow installs rawpy for RAW support, runs core tests, checks basic Tk interactions, and uploads builds as Actions artifacts. After all builds pass, it publishes a prerelease with ZIP downloads. Re-running this version replaces its release assets. Builds are unsigned and not notarized. The workflow checks that the packaged Mac application launches, but the apps still need real assignment testing on Macs/Windows machines; a successful source test run is not evidence of a packaged app working.
 

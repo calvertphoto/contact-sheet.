@@ -39,7 +39,7 @@ class ContactSheet(tk.Tk):
         self.search = tk.StringVar()
         self.status = tk.StringVar(value='Open a folder to begin. Photos stay on your computer.')
         self._build()
-        self._bind()
+        self._bind_shortcuts()
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.after(70, self._poll)
 
@@ -112,7 +112,7 @@ class ContactSheet(tk.Tk):
         ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nExport copies picks to a new folder.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
         ttk.Label(self, textvariable=self.status, padding=8).pack(fill='x')
 
-    def _bind(self):
+    def _bind_shortcuts(self):
         for key, action in [('<Left>', lambda: self.move(-1)), ('<Right>', lambda: self.move(1)), ('<p>', lambda: self.rate(label='Green')), ('<x>', lambda: self.rate(-1, '')), ('<u>', lambda: self.rate(0, '')), ('<z>', self.toggle_zoom)]:
             self.bind(key, lambda e, fn=action: self.shortcut(e, fn))
         for n in range(6):
