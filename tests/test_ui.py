@@ -7,6 +7,8 @@ from pathlib import Path
 from PIL import Image
 from app import ContactSheet
 from core import empty_metadata, load_metadata
+from renaming import rename_plan, apply_rename
+import tkinter as tk
 
 @unittest.skipIf(sys.platform.startswith('linux') and not os.environ.get('DISPLAY'), 'No graphical display available')
 class DesktopSmokeTests(unittest.TestCase):
@@ -40,6 +42,18 @@ class DesktopSmokeTests(unittest.TestCase):
         app.rate(label='Green')
         self.assertEqual(load_metadata(self.paths[1])['rating'], 5)
         self.assertEqual(app.picks(), [self.paths[1]])
+    def test_renamed_photos_refresh_selection_metadata_and_date_display(self):
+        app = self.app
+        app.select(self.paths[0]); app.select_all()
+        mapping = apply_rename(rename_plan(self.paths, 'Aces', include_date=False))
+        dialog = tk.Toplevel(app)
+        app.results.put(('renamed',app.generation,(mapping,dialog)))
+        app._poll()
+        self.assertEqual(app.current,mapping[self.paths[0]])
+        self.assertEqual(app.selection.selected,set(mapping.values()))
+        self.assertEqual(app.filename.cget('text'),'Aces_0001.jpg')
+        self.assertEqual(app.capture_label.cget('text'),'Date captured: Unavailable')
+
     def test_filters_and_clear(self):
         app = self.app
         app.select(self.paths[0])

@@ -1,6 +1,6 @@
 # Contact Sheet
 
-An open-source desktop photo culling and captioning app, built around the first pass through a news or sports assignment. Version **0.1.0 — prototype**. MIT licensed; no accounts, cloud uploads, subscription, analytics, or AI features.
+An open-source desktop photo culling and captioning app, built around the first pass through a news or sports assignment. Version **0.3.0 — prototype**. MIT licensed; no accounts, cloud uploads, subscription, analytics, or AI features.
 
 This is an independent project, not affiliated with Photo Mechanic or Camera Bits. It is a starting point for a simpler workflow, not a feature-complete replacement.
 
@@ -115,3 +115,11 @@ Command/Control-click selects several photos; Shift-click selects a range. Use E
 Edit IPTC fields opens eight scrollable sections. Repeated entries such as locations, artwork, image creators, registry entries and licensors have an Edit rows form. List fields use semicolons. Enumerated rights and media properties accept standard PLUS or IPTC URI values. Metadata is stored in XMP sidecars; originals are never rewritten.
 
 Download Apple Silicon, Intel Mac, Windows or Linux builds from the v0.2.0 release once the build workflow finishes. Mac: extract the ZIP and open ContactSheet.app. Windows: extract the entire ZIP and open ContactSheet.exe inside its folder. Linux: extract the tar.gz and run ContactSheet/ContactSheet.
+
+## Version 0.3
+
+Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
+
+The Export selected button has been removed. Open in… offers Photoshop, Photo Craft and Other editor. Choose the installed application the first time; named editor choices are remembered independently.
+
+[Download version 0.3.0](https://github.com/calvertphoto/contact-sheet./releases/tag/v0.3.0).
