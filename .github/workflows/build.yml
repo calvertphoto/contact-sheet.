@@ -1,0 +1,73 @@
+name: Test and build desktop apps
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS-Apple-Silicon
+          - os: macos-15-intel
+            label: macOS-Intel
+          - os: windows-latest
+            label: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements-raw.txt 'pyinstaller>=6.16,<7'
+      - name: Test metadata, export, and preview handling
+        run: python -m unittest discover -s tests -v
+      - name: Build standalone desktop application
+        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --collect-all rawpy app.py
+      - name: Check packaged Mac app starts
+        if: runner.os == 'macOS'
+        run: dist/ContactSheet.app/Contents/MacOS/ContactSheet --smoke-test
+      - name: Archive macOS app preserving permissions
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/ContactSheet.app dist/ContactSheet-${{ matrix.label }}.zip
+      - name: Upload macOS build
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContactSheet-${{ matrix.label }}
+          path: dist/ContactSheet-${{ matrix.label }}.zip
+      - name: Upload Windows build
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContactSheet-${{ matrix.label }}
+          path: dist/ContactSheet/
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+      - name: Zip Windows folder
+        run: cd downloads/ContactSheet-Windows && zip -r ../../ContactSheet-Windows.zip .
+      - name: Publish downloadable prototype
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view v0.1.0 >/dev/null 2>&1; then
+            gh release create v0.1.0 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.1.0" --notes "Prototype for photo culling and captioning. Download the ZIP matching your Mac: Intel or Apple Silicon. Unzip and open ContactSheet.app. No Python installation needed. Builds are unsigned and not notarized; macOS may require opening through Privacy & Security. RAW previews use embedded thumbnails where available. Metadata saves to sidecars; original photos are never rewritten."
+          fi
+          gh release upload v0.1.0 downloads/ContactSheet-macOS-Apple-Silicon/*.zip downloads/ContactSheet-macOS-Intel/*.zip ContactSheet-Windows.zip --clobber
