@@ -29,12 +29,9 @@ class DeliveryTests(unittest.TestCase):
         client.prot_p.assert_called_once()
         client.storbinary.assert_called_once()
         self.assertEqual(progress[0][:3], (1,1,'photo.jpg'))
-    @patch('delivery.FTP')
-    def test_photoshelter_uses_incoming_ftp(self, factory):
-        client = factory.return_value.__enter__.return_value
-        dest = Destination('PhotoShelter','ftp.photoshelter.com','user','pass')
-        self.assertEqual(upload_files([self.file],dest),1)
-        client.connect.assert_called_once_with('ftp.photoshelter.com',21,timeout=30)
+    def test_photoshelter_is_not_an_option(self):
+        with self.assertRaises(ValueError):
+            validate(Destination('PhotoShelter','server','user','pass'))
     @patch('delivery._ftp_one',side_effect=[OSError('offline'),None])
     @patch('delivery.time.sleep')
     def test_retry(self, sleep, transfer):
