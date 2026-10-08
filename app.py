@@ -613,10 +613,22 @@ class ContactSheet(tk.Tk):
         form = ttk.Frame(dialog,padding=12); form.pack(fill='x')
         prefix = tk.StringVar(value='Photo'); start = tk.StringVar(value='1'); digits = tk.StringVar(value='4')
         include_date = tk.BooleanVar(value=True)
+        date_format = tk.StringVar(value='YYYYMMDD')
         for text,var in [('Name prefix',prefix),('Start number',start),('Sequence digits',digits)]:
             ttk.Label(form,text=text).pack(anchor='w'); ttk.Entry(form,textvariable=var).pack(fill='x',pady=(0,6))
-        ttk.Checkbutton(form,text='Include date captured (YYYYMMDD)',variable=include_date).pack(anchor='w')
-        ttk.Label(form,text='Example: Photo_20261008_0001.jpg. Existing files are never overwritten. Sidecars follow renamed photos.',wraplength=800).pack(anchor='w',pady=10)
+        ttk.Checkbutton(form,text='Include date captured',variable=include_date).pack(anchor='w')
+        date_row = ttk.Frame(form); date_row.pack(fill='x',pady=(4,6))
+        ttk.Label(date_row,text='Date format').pack(side='left',padx=(0,12))
+        ttk.Combobox(date_row,textvariable=date_format,values=('YYYYMMDD','DDMMYY'),state='readonly',width=14).pack(side='left')
+        example = tk.StringVar()
+        ttk.Label(form,textvariable=example,wraplength=800).pack(anchor='w',pady=10)
+        def update_example(*_):
+            sample = '20261008' if date_format.get() == 'YYYYMMDD' else '081026'
+            middle = '_'+sample if include_date.get() else ''
+            example.set(f'Example: Photo{middle}_0001.jpg. Existing files are never overwritten. Sidecars follow renamed photos.')
+        date_format.trace_add('write',update_example)
+        include_date.trace_add('write',update_example)
+        update_example()
         tree = ttk.Treeview(dialog,columns=('old','new','date'),show='headings')
         for key,title in [('old','Current filename'),('new','New filename'),('date','Date captured')]: tree.heading(key,text=title); tree.column(key,width=250)
         tree.pack(fill='both',expand=True,padx=12)
@@ -624,9 +636,9 @@ class ContactSheet(tk.Tk):
         plan = [None]; busy = [False]
         buttons = ttk.Frame(dialog,padding=12); buttons.pack(fill='x')
         def invalidate(*args): plan[0] = None; rename_button.configure(state='disabled')
-        for var in [prefix,start,digits,include_date]: var.trace_add('write',invalidate)
+        for var in [prefix,start,digits,include_date,date_format]: var.trace_add('write',invalidate)
         def preview_names():
-            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get())
+            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),'%Y%m%d' if date_format.get() == 'YYYYMMDD' else '%d%m%y')
             except Exception as exc:
                 note.set(str(exc)); invalidate(); return
             tree.delete(*tree.get_children())
