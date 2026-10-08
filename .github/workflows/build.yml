@@ -33,7 +33,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ runner.temp }}/contact-sheet
+        working-directory: source
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,12 +46,16 @@ jobs:
           python-version: '3.12'
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb libxcb-cursor0
       - name: Install dependencies
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: python -m pip install --only-binary=:all: -r requirements.txt 'rawpy==${{ matrix.rawpy }}' 'pyinstaller>=6.16,<7'
       - name: Generate application icon
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: python make_icon.py
       - name: Test desktop and metadata
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run -a python -m unittest discover -s tests -v
@@ -59,8 +63,10 @@ jobs:
             python -m unittest discover -s tests -v
           fi
       - name: Build standalone application
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy app.py
       - name: Check packaged app starts
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
             dist/ContactSheet.app/Contents/MacOS/ContactSheet --smoke-test
@@ -71,12 +77,15 @@ jobs:
           fi
       - name: Archive Mac application
         if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: ditto -c -k --sequesterRsrc --keepParent dist/ContactSheet.app dist/ContactSheet-${{ matrix.label }}.zip
       - name: Archive Windows application
         if: runner.os == 'Windows'
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: python -c "import shutil; shutil.make_archive('dist/ContactSheet-Windows','zip','dist','ContactSheet')"
       - name: Archive Linux application
         if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}/contact-sheet
         run: tar -czf dist/ContactSheet-Linux.tar.gz -C dist ContactSheet
       - uses: actions/upload-artifact@v4
         with:
