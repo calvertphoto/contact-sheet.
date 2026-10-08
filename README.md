@@ -124,29 +124,8 @@ The Export selected button has been removed. Open in… offers Photoshop, Photo 
 
 [Download version 0.3.0](https://github.com/calvertphoto/contact-sheet./releases/tag/v0.3.0).
 
-## Upload selected photos (development branch)
+## Upload selected photos (version 0.4.1)
 
-Select one or more photographs and choose **Upload selected…**. Choose FTP, FTPS,
-SFTP, or PhotoShelter, then enter server address, username, password, optional port,
-and existing destination folder. Transfers run in the background, sequentially,
-with two automatic retries. The window reports per-file progress and errors.
+Select photos and choose **Upload selected…**. The supported destinations are **FTP**, **FTPS** and **SFTP**. Enter your server address, username, password, optional port and remote folder. Transfers are sequential, with progress and two retry attempts. Passwords are not persisted. FTPS encrypts authentication and transfer traffic; SFTP uses SSH with existing trusted host keys. Standard FTP is unencrypted. Remote servers may overwrite files with matching names. The app sends selected original images as-is, not XMP sidecars. Use copies for initial tests.
 
-- **FTPS** uses TLS for both authentication and file transfers and is the preferred
-  option when the destination supports it. **SFTP** uses SSH and requires that the
-  server's host key already be trusted in your system SSH known-hosts file.
-- **FTP and the PhotoShelter preset** use unencrypted FTP. Credentials and images
-  can be exposed in transit; use only where specifically required and on networks
-  you trust. Passwords are only held for the current transfer, not written to a
-  settings file. We do not currently store destination presets.
-- **PhotoShelter for Photographers:** enable incoming FTP and obtain account-specific
-  FTP credentials from PhotoShelter. Incoming FTP requires an eligible plan; consult
-  [PhotoShelter instructions](https://support.photoshelter.com/hc/en-us/articles/203373550-FTP-Incoming).
-- **PhotoShelter for Brands:** an administrator/editor must create incoming-FTP
-  credentials for a gallery/collection. [Brand upload instructions](https://support.photoshelterbrands.com/hc/en-us/articles/115000046673-Upload-with-Incoming-FTP-Admin-Editor).
-- Uploading a file with the same filename may overwrite an existing remote file,
-  depending on the server. Confirm your remote folder contents first.
-- This first implementation uploads original selected files as-is. It does not
-  embed XMP sidecar edits into them or automatically transmit sidecar files.
-  It is not a PhotoShelter API/gallery-management integration.
-
-This feature is in the development branch and **not part of v0.3.0 downloads**.
+[Download the latest release](https://github.com/calvertphoto/contact-sheet./releases/latest).
