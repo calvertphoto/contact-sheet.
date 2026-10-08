@@ -81,7 +81,7 @@ jobs:
           APP="dist/ContactSheet.app"
           plutil -lint "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.4.0" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$APP/Contents/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 4" "$APP/Contents/Info.plist"
           codesign --force --deep --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           test -x "$APP/Contents/MacOS/ContactSheet"
