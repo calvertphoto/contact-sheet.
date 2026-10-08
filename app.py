@@ -2,22 +2,28 @@
 from __future__ import annotations
 import csv
 import queue
+import sys
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from PIL import ImageTk
+from selection import PhotoSelection
+from editors import saved_editor, remember_editor, open_in_editor
 from core import photos, preview, load_metadata, save_metadata, export_photos, empty_metadata
 
 class ContactSheet(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Contact Sheet — Cull • Caption • Export')
+        self.title('Contact Sheet 0.2.0 — Cull • Caption • Edit')
         self.geometry('1380x860')
         self.minsize(1000, 680)
-        self.configure(bg='#171b22')
+        self.configure(bg='#d4d4d4')
         self.paths = []
         self.visible = []
+        self.selection = PhotoSelection()
+        self.editor = saved_editor()
         self.metadata = {}
         self.errors = {}
         self.current = None
@@ -38,6 +44,10 @@ class ContactSheet(tk.Tk):
         self.filter = tk.StringVar(value='All photos')
         self.search = tk.StringVar()
         self.status = tk.StringVar(value='Open a folder to begin. Photos stay on your computer.')
+        icon_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))/'assets'/'contact-sheet.png'
+        if icon_path.exists():
+            self.app_icon = ImageTk.PhotoImage(file=str(icon_path))
+            self.iconphoto(True, self.app_icon)
         self._build()
         self._bind_shortcuts()
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -46,15 +56,19 @@ class ContactSheet(tk.Tk):
     def _build(self):
         style = ttk.Style(self)
         style.theme_use('clam')
-        style.configure('.', background='#212733', foreground='#f2f4f8', fieldbackground='#141922')
-        style.configure('TButton', padding=(10, 7))
-        style.configure('TEntry', fieldbackground='#141922')
-        style.configure('TCombobox', fieldbackground='#141922')
+        style.configure('.', background='#cccccc', foreground='#202020', fieldbackground='#f6f6f6')
+        style.configure('TButton', padding=(8, 6))
+        style.map('TButton', background=[('active', '#bcbcbc')])
+        style.configure('Treeview', background='#f6f6f6', fieldbackground='#f6f6f6', foreground='#202020')
+        style.configure('TEntry', fieldbackground='#f6f6f6')
+        style.configure('TCombobox', fieldbackground='#f6f6f6')
         bar = ttk.Frame(self, padding=12)
         bar.pack(fill='x')
         ttk.Label(bar, text='CONTACT SHEET', font=('Helvetica', 17, 'bold')).pack(side='left', padx=(0, 18))
         ttk.Button(bar, text='Open folder', command=self.open_folder).pack(side='left')
-        ttk.Button(bar, text='Export picks', command=self.export).pack(side='left', padx=6)
+        ttk.Button(bar, text='Export selected', command=self.export_selected).pack(side='left', padx=6)
+        ttk.Button(bar, text='Export picks', command=self.export).pack(side='left')
+        ttk.Button(bar, text='Open in app', command=self.open_selected_in_editor).pack(side='left', padx=6)
         ttk.Button(bar, text='Caption CSV', command=self.csv_export).pack(side='left')
         ttk.Button(bar, text='Shortcuts', command=self.help).pack(side='right')
         body = ttk.Panedwindow(self, orient='horizontal')
@@ -74,6 +88,12 @@ class ContactSheet(tk.Tk):
         entry.pack(fill='x', pady=7)
         self.search.trace_add('write', lambda *args: self.filter_photos())
         ttk.Label(left, text='Search filenames, captions, keywords', font=('Helvetica', 10)).pack(anchor='w')
+        selection_bar = ttk.Frame(left)
+        selection_bar.pack(fill='x', pady=(8, 0))
+        ttk.Button(selection_bar, text='Select all', command=self.select_all).pack(side='left')
+        ttk.Button(selection_bar, text='Clear', command=self.clear_selection).pack(side='left', padx=5)
+        self.selection_count = ttk.Label(selection_bar, text='0 selected')
+        self.selection_count.pack(side='right')
         self.grid = ttk.Frame(left)
         self.grid.pack(fill='both', expand=True, pady=8)
         nav = ttk.Frame(left)
@@ -84,7 +104,7 @@ class ContactSheet(tk.Tk):
         ttk.Button(nav, text='Page ›', command=lambda: self.change_page(1)).pack(side='right')
         self.filename = ttk.Label(center, text='Choose a photo', font=('Helvetica', 13, 'bold'))
         self.filename.pack(anchor='w', pady=(0, 8))
-        self.canvas = tk.Canvas(center, background='#0d1117', highlightthickness=0)
+        self.canvas = tk.Canvas(center, background='#a8a8a8', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<ButtonPress-1>', lambda e: self.canvas.scan_mark(e.x, e.y))
         self.canvas.bind('<B1-Motion>', lambda e: self.canvas.scan_dragto(e.x, e.y, gain=1))
@@ -97,7 +117,7 @@ class ContactSheet(tk.Tk):
         self.rating_text.pack(anchor='w')
         ttk.Label(right, text='CAPTION & METADATA', font=('Helvetica', 12, 'bold')).pack(anchor='w')
         ttk.Label(right, text='Caption', padding=(0, 14, 0, 4)).pack(anchor='w')
-        self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#141922', fg='#f2f4f8', insertbackground='white', undo=True, relief='flat', padx=8, pady=8)
+        self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#f6f6f6', fg='#202020', insertbackground='#202020', undo=True, relief='flat', padx=8, pady=8)
         self.caption.pack(fill='x')
         self.caption.bind('<<Modified>>', self.modified)
         self.fields = {}
@@ -109,7 +129,10 @@ class ContactSheet(tk.Tk):
             self.fields[name] = variable
         ttk.Button(right, text='Save caption  ⌘/Ctrl+S', command=self.save).pack(fill='x', pady=(18, 8))
         ttk.Button(right, text='Apply these fields to picks…', command=self.batch_caption).pack(fill='x')
-        ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nExport copies picks to a new folder.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
+        self.editor_label = ttk.Label(right, text=self.editor.name if self.editor else 'Choose an editor with Open in app', wraplength=260)
+        self.editor_label.pack(anchor='w', pady=(12, 4))
+        ttk.Button(right, text='Change editor…', command=self.choose_editor).pack(fill='x')
+        ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nExport copies selected photos or picks.\nOpen in app sends selected originals.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
         ttk.Label(self, textvariable=self.status, padding=8).pack(fill='x')
 
     def _bind_shortcuts(self):
@@ -121,8 +144,10 @@ class ContactSheet(tk.Tk):
             try:
                 self.bind(f'<{modifier}-s>', lambda e: self.save())
                 self.bind(f'<{modifier}-o>', lambda e: self.open_folder())
+                self.bind(f'<{modifier}-a>', lambda e: self.shortcut(e, self.select_all))
             except tk.TclError:
                 pass
+        self.bind('<Escape>', lambda e: self.shortcut(e, self.clear_selection))
     def shortcut(self, event, action):
         if isinstance(self.focus_get(), (tk.Text, ttk.Entry, ttk.Combobox)):
             return
@@ -194,6 +219,7 @@ class ContactSheet(tk.Tk):
             if 'stars' in mode and rating < int(mode[0]): return False
             return query in (path.name + ' ' + data['caption'] + ' ' + ' '.join(data['keywords'])).casefold()
         self.visible = [p for p in self.paths if matches(p)]
+        self.selection.retain_visible(self.visible)
         self.page = 0
         self.render_grid()
     def change_page(self, delta):
@@ -224,22 +250,25 @@ class ContactSheet(tk.Tk):
         start = self.page*self.page_size
         for i, path in enumerate(self.visible[start:start+self.page_size]):
             row, col = divmod(i, 3)
-            box = tk.Frame(self.grid, bg='#263547' if path == self.current else '#171b22', padx=4, pady=4)
+            selected = path in self.selection.selected
+            box = tk.Frame(self.grid, bg='#b4cee5' if selected else '#d4d4d4', padx=4, pady=4, highlightthickness=2, highlightbackground='#357bad' if path == self.current else ('#588caf' if selected else '#d4d4d4'))
             box.grid(row=row, column=col, sticky='nsew', padx=2, pady=2)
-            button = tk.Label(box, text='Loading…', bg='#171b22', fg='white', width=14, height=4)
+            button = tk.Label(box, text='Loading…', bg='#d4d4d4', fg='#202020', width=14, height=4)
             button.pack(fill='both', expand=True)
-            button.bind('<Button-1>', lambda e, p=path: self.select(p))
+            self.bind_photo_click(button, path)
+            self.bind_photo_click(box, path)
             data = self.metadata[path]
             symbol = 'REJECT' if data['rating'] == -1 else '★'*data['rating']
             if data['label'] == 'Green': symbol = 'PICK ' + symbol
-            label = tk.Label(box, text=path.name[:18]+'\n'+symbol, bg=box['bg'], fg='#7cdea5' if data['label']=='Green' else '#eef2f6', font=('Helvetica', 9))
+            label = tk.Label(box, text=path.name[:18]+'\n'+symbol, bg=box['bg'], fg='#246b36' if data['label']=='Green' else '#252525', font=('Helvetica', 9))
             label.pack()
-            label.bind('<Button-1>', lambda e, p=path: self.select(p))
+            self.bind_photo_click(label, path)
             self.thumb_widgets[path] = button
             key = (path, (140, 85), False)
             if key in self.cache: self.set_thumb(path, self.cache[key])
             else: self.request_preview(path, (140, 85), 'thumb')
         for col in range(3): self.grid.columnconfigure(col, weight=1)
+        self.selection_count.config(text=f'{len(self.selection.selected)} selected')
         self.page_label.config(text=f'{self.page+1} / {max(1, (len(self.visible)+self.page_size-1)//self.page_size)} · {len(self.visible)} photos')
     def set_thumb(self, path, value):
         widget = self.thumb_widgets.get(path)
@@ -250,8 +279,30 @@ class ContactSheet(tk.Tk):
             photo = ImageTk.PhotoImage(value)
             self.photo_refs.append(photo)
             widget.config(image=photo, text='', width=0, height=0)
-    def select(self, path):
+    def bind_photo_click(self, widget, path):
+        widget.bind('<Button-1>', lambda e: self.select(path))
+        widget.bind('<Shift-Button-1>', lambda e: self.select(path, extend=True))
+        modifier = 'Command' if sys.platform == 'darwin' else 'Control'
+        widget.bind(f'<{modifier}-Button-1>', lambda e: self.select(path, toggle=True))
+        widget.bind(f'<{modifier}-Shift-Button-1>', lambda e: self.select(path, toggle=True, extend=True))
+
+    def selected_paths(self):
+        return self.selection.ordered(self.visible)
+
+    def select_all(self):
         if not self.save(): return
+        self.selection.select_all(self.visible)
+        self.render_grid()
+        self.status.set(f'{len(self.selection.selected)} photos selected across all filtered pages.')
+
+    def clear_selection(self):
+        self.selection.clear()
+        self.render_grid()
+        self.status.set('Selection cleared.')
+
+    def select(self, path, toggle=False, extend=False):
+        if path not in self.visible or not self.save(): return
+        self.selection.click(path, self.visible, toggle=toggle, extend=extend)
         self.current = path
         data = self.metadata[path]
         self.caption.delete('1.0', 'end')
@@ -264,7 +315,7 @@ class ContactSheet(tk.Tk):
         self.render_grid()
         self.show_preview()
         self.focus_set()
-        if path in self.errors: self.status.set(self.errors[path])
+        self.status.set(self.errors[path] if path in self.errors else f'{len(self.selection.selected)} selected · Cmd/Ctrl-click to add, Shift-click for a range')
     def move(self, delta):
         if not self.visible: return
         index = self.visible.index(self.current) if self.current in self.visible else (-1 if delta>0 else len(self.visible))
@@ -291,7 +342,7 @@ class ContactSheet(tk.Tk):
         if self.current is None: return
         self.preview_token += 1
         self.canvas.delete('all')
-        self.canvas.create_text(20, 20, anchor='nw', fill='white', text='Loading preview…')
+        self.canvas.create_text(20, 20, anchor='nw', fill='#202020', text='Loading preview…')
         size = (max(500, self.canvas.winfo_width()), max(400, self.canvas.winfo_height()))
         self.request_preview(self.current, size, 'preview', self.preview_token, self.mode=='100%')
     def toggle_zoom(self):
@@ -302,13 +353,14 @@ class ContactSheet(tk.Tk):
         try:
             while True:
                 kind, generation, payload = self.results.get_nowait()
-                if generation != self.generation and kind not in ('export', 'export_error'):
+                if generation != self.generation and kind not in ('export', 'export_error', 'editor', 'editor_error'):
                     if kind == 'thumb': self.pending.discard(payload[0])
                     continue
                 if kind == 'folder':
                     if not self.save(): continue
                     self.folder, self.paths, self.metadata, self.errors = payload
                     self.current = None
+                    self.selection.clear()
                     self.preview_token += 1
                     self.cache.clear()
                     self.pending.clear()
@@ -322,6 +374,8 @@ class ContactSheet(tk.Tk):
                         self.filename.config(text='No supported photos in this folder')
                         self.caption.delete('1.0', 'end')
                 elif kind == 'error': messagebox.showerror('Operation failed', payload)
+                elif kind == 'editor': self.status.set(payload)
+                elif kind == 'editor_error': messagebox.showerror('Could not open editor', payload)
                 elif kind == 'export_error': messagebox.showerror('Export stopped', payload)
                 elif kind == 'export':
                     self.status.set(payload)
@@ -337,7 +391,7 @@ class ContactSheet(tk.Tk):
                     if token != self.preview_token or key[0]!=self.current: continue
                     self.canvas.delete('all')
                     if isinstance(value, str):
-                        self.canvas.create_text(20, 20, anchor='nw', fill='white', width=440, text=value)
+                        self.canvas.create_text(20, 20, anchor='nw', fill='#202020', width=440, text=value)
                     else:
                         self.preview_ref = ImageTk.PhotoImage(value)
                         self.canvas.create_image(0, 0, anchor='nw', image=self.preview_ref)
@@ -350,15 +404,20 @@ class ContactSheet(tk.Tk):
         return [p for p in self.paths if self.metadata[p]['label']=='Green' and self.metadata[p]['rating']>=0]
     def export(self):
         if not self.save(): return
-        paths = self.picks()
+        self.copy_export(self.picks(), 'picks')
+
+    def export_selected(self):
+        if not self.save(): return
+        self.copy_export(self.selected_paths(), 'selected photos')
+
+    def copy_export(self, paths, description):
         if any(p in self.errors for p in paths):
-            messagebox.showerror('Metadata needs attention', 'One or more picks has unreadable metadata. Resolve the sidecar error before exporting.'); return
+            messagebox.showerror('Metadata needs attention', 'One or more photos has unreadable metadata. Resolve the sidecar error before exporting.'); return
         if not paths:
-            messagebox.showinfo('No picks yet', 'Press P to pick photos, then export them.'); return
-        folder = filedialog.askdirectory(title=f'Copy {len(paths)} picks to an empty destination folder')
+            messagebox.showinfo('No photos', 'Select photos with Cmd/Ctrl-click or Shift-click, or mark picks with P.'); return
+        folder = filedialog.askdirectory(title=f'Copy {len(paths)} {description} to an empty destination folder')
         if not folder: return
-        self.status.set('Copying picks…')
-        # Export off the UI thread; present a result without silently retrying.
+        self.status.set(f'Copying {len(paths)} {description}…')
         generation = self.generation
         def work():
             try:
@@ -366,8 +425,45 @@ class ContactSheet(tk.Tk):
                 self.results.put(('export', generation, f'Copied {count} photos and available sidecars.'))
             except Exception as exc:
                 self.results.put(('export_error', generation, 'Some files may have been copied before stopping. ' + str(exc)))
-        # Use a dedicated completion callback via a second queue event handler.
         self.pool.submit(work)
+
+    def choose_editor(self):
+        if sys.platform == 'darwin':
+            options = dict(title='Choose Photoshop or another photo editor', initialdir='/Applications', filetypes=[('Applications', '*.app')])
+        elif sys.platform == 'win32':
+            options = dict(title='Choose your photo editor', filetypes=[('Applications', '*.exe')])
+        else:
+            options = dict(title='Choose your photo editor executable')
+        path = filedialog.askopenfilename(**options)
+        if not path: return None
+        editor = Path(path)
+        if sys.platform == 'darwin' and (editor.suffix.lower() != '.app' or not editor.is_dir()):
+            messagebox.showerror('Choose an application', 'Choose the editor’s .app application, such as Adobe Photoshop.app.'); return None
+        self.editor = editor
+        self.editor_label.config(text=editor.name)
+        try:
+            remember_editor(editor)
+        except OSError:
+            self.status.set('Editor chosen for this session; could not save the preference.')
+        return editor
+
+    def open_selected_in_editor(self):
+        if not self.save(): return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('No photos selected', 'Select one or more photos first. Use Cmd/Ctrl-click or Shift-click to select several.'); return
+        editor = self.editor if self.editor and self.editor.exists() else self.choose_editor()
+        if not editor: return
+        self.status.set(f'Opening {len(paths)} photos in {editor.name}…')
+        generation = self.generation
+        def work():
+            try:
+                count = open_in_editor(paths, editor)
+                self.results.put(('editor', generation, f'Sent {count} photos to {editor.name}.'))
+            except Exception as exc:
+                self.results.put(('editor_error', generation, str(exc)))
+        self.pool.submit(work)
+
     def csv_export(self):
         if not self.save(): return
         file = filedialog.asksaveasfilename(title='Save caption spreadsheet', defaultextension='.csv', filetypes=[('CSV', '*.csv')])
@@ -404,7 +500,7 @@ class ContactSheet(tk.Tk):
             self.status.set(f'Updated {count} picks.')
         except Exception as exc: messagebox.showerror('Batch stopped', f'Updated {count} photos before stopping: {exc}')
     def help(self):
-        messagebox.showinfo('Contact Sheet shortcuts', '← / →: previous / next\n0–5: star rating\nP: green pick\nX: reject\nU: clear rating and pick\nZ: fit / 100% preview, drag to pan\n⌘/Ctrl+S: save caption\n⌘/Ctrl+O: open folder\n\nEdits save before changing photos or closing.\nShortcuts pause while typing in fields.\nOpen folders are not scanned recursively.')
+        messagebox.showinfo('Contact Sheet shortcuts', 'Cmd/Ctrl-click: add or remove a photo\nShift-click: select a range across pages\nCmd/Ctrl+A: select all filtered photos\nEscape: clear selection\nOpen in app: send selected originals to an editor\n← / →: previous / next\n0–5: star rating\nP: green pick\nX: reject\nU: clear rating and pick\nZ: fit / 100% preview, drag to pan\n⌘/Ctrl+S: save caption\n⌘/Ctrl+O: open folder\n\nEdits save before changing photos or closing.\nShortcuts pause while typing in fields.\nOpen folders are not scanned recursively.')
     def close(self):
         if not self.save(): return
         self.pool.shutdown(wait=False, cancel_futures=True)
