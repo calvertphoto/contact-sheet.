@@ -69,7 +69,26 @@ jobs:
           fi
       - name: Build standalone application
         working-directory: ${{ runner.temp }}/contact-sheet
-        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy --hidden-import PIL._tkinter_finder app.py
+        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy --hidden-import PIL._tkinter_finder --osx-bundle-identifier com.calvertphoto.contactsheet app.py
+      - name: Validate and sign macOS application
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}/contact-sheet
+        run: |
+          APP="dist/ContactSheet.app"
+          plutil -lint "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.4.0" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 4" "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          test -x "$APP/Contents/MacOS/ContactSheet"
+          file "$APP/Contents/MacOS/ContactSheet"
+      - name: Test macOS Launch Services open
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}/contact-sheet
+        run: |
+          open "dist/ContactSheet.app"
+          sleep 5
+          pgrep -fl ContactSheet || true
       - name: Check packaged app starts
         working-directory: ${{ runner.temp }}/contact-sheet
         run: |
