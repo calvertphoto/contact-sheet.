@@ -24,6 +24,13 @@ class RenamingTests(unittest.TestCase):
             self.assertEqual(result[path].name,f'Aces_20261008_{i+7:03}.jpg')
             self.assertEqual(result[path].read_bytes(),before[i]);self.assertFalse(path.exists())
         self.assertEqual(load_metadata(result[self.paths[0]])['caption'],'Reno Aces')
+    def test_ddmmyy_format_and_sidecar(self):
+        data=empty_metadata(); data['caption']='Reno Aces'; save_metadata(self.paths[0],data)
+        plan=rename_plan([self.paths[0]],'Aces',1,4,True,'%d%m%y')
+        self.assertEqual(plan.photos[0][1].name,'Aces_081026_0001.jpg')
+        new=apply_rename(plan)[self.paths[0]]
+        self.assertEqual(load_metadata(new)['caption'],'Reno Aces')
+
     def test_missing_date_does_not_use_file_modification_time(self):
         path=self.root/'no-date.jpg';Image.new('RGB',(10,10)).save(path)
         self.assertIsNone(capture_date(path))
