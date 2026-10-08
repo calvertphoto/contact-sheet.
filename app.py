@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from PIL import ImageTk
 from renaming import capture_date, rename_plan, apply_rename
+from delivery import Destination, upload_files
 from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
 from selection import PhotoSelection
 from editors import saved_editor, remember_editor, open_in_editor, named_editor
@@ -72,6 +73,7 @@ class ContactSheet(tk.Tk):
         ttk.Button(bar, text='Open folder', command=self.open_folder).pack(side='left')
         ttk.Button(bar, text='Rename selected…', command=self.rename_selected).pack(side='left', padx=6)
         ttk.Button(bar, text='Export picks', command=self.export).pack(side='left')
+        ttk.Button(bar, text='Upload selected…', command=self.upload_selected).pack(side='left', padx=6)
         editor_button = ttk.Menubutton(bar, text='Open in…')
         editor_menu = tk.Menu(editor_button, tearoff=False)
         editor_menu.add_command(label='Photoshop', command=lambda: self.open_selected_in_editor('Photoshop'))
@@ -660,6 +662,102 @@ class ContactSheet(tk.Tk):
         rename_button = ttk.Button(buttons,text='Rename photos',command=run,state='disabled'); rename_button.pack(side='right')
         cancel_button = ttk.Button(buttons,text='Cancel',command=dialog.destroy); cancel_button.pack(side='right',padx=6)
         preview_names()
+
+    def upload_selected(self):
+        if not self.save(): return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('Upload photos', 'Select one or more images first.')
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title('Upload selected photos')
+        dialog.geometry('600x530')
+        dialog.transient(self)
+        dialog.grab_set()
+        form = ttk.Frame(dialog, padding=14)
+        form.pack(fill='both', expand=True)
+        values = {
+            'protocol': tk.StringVar(value='FTPS'),
+            'host': tk.StringVar(),
+            'port': tk.StringVar(),
+            'username': tk.StringVar(),
+            'password': tk.StringVar(),
+            'directory': tk.StringVar(),
+        }
+        ttk.Label(form, text=f'{len(paths)} selected photograph(s)', font=('Helvetica', 12, 'bold')).pack(anchor='w')
+        ttk.Label(form, text='PhotoShelter uses incoming FTP credentials created in your PhotoShelter account. FTP sends credentials without encryption; use FTPS or SFTP when your server supports it.', wraplength=550).pack(anchor='w', pady=(6,12))
+        for key, title in [('protocol','Destination type'),('host','Server address'),('port','Port (optional)'),('username','Username'),('password','Password'),('directory','Remote folder (optional)')]:
+            ttk.Label(form, text=title).pack(anchor='w')
+            if key == 'protocol':
+                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP','PhotoShelter'))
+                def change_protocol(event=None):
+                    if values['protocol'].get() == 'PhotoShelter':
+                        values['host'].set('ftp.photoshelter.com')
+                        values['port'].set('21')
+                control.bind('<<ComboboxSelected>>', change_protocol)
+            else:
+                control = ttk.Entry(form, textvariable=values[key], show='*' if key == 'password' else '')
+            control.pack(fill='x', pady=(0,5))
+        status = tk.StringVar(value='Ready to upload. Files are transmitted individually.')
+        ttk.Label(form, textvariable=status, wraplength=550).pack(anchor='w', pady=(8,4))
+        progressbar = ttk.Progressbar(form, mode='determinate', maximum=len(paths))
+        progressbar.pack(fill='x', pady=(0,10))
+        controls = ttk.Frame(form)
+        controls.pack(fill='x')
+        upload_button = ttk.Button(controls, text='Start upload')
+        upload_button.pack(side='right')
+        close_button = ttk.Button(controls, text='Close', command=dialog.destroy)
+        close_button.pack(side='right', padx=7)
+        transfer_events = queue.Queue()
+        running = [False]
+        def poll_transfer():
+            if not dialog.winfo_exists(): return
+            try:
+                while True:
+                    kind, payload = transfer_events.get_nowait()
+                    if kind == 'progress':
+                        done, total, name, error = payload
+                        progressbar['value'] = done
+                        status.set(f'{done} of {total} sent: {name}' if not error else f'Failed: {name} — {error}')
+                    elif kind == 'done':
+                        status.set(f'Successfully uploaded {payload} photographs.')
+                        upload_button.configure(state='normal')
+                        close_button.configure(state='normal')
+                        running[0] = False
+                    elif kind == 'error':
+                        status.set(str(payload))
+                        upload_button.configure(state='normal')
+                        close_button.configure(state='normal')
+                        running[0] = False
+            except queue.Empty:
+                pass
+            dialog.after(100, poll_transfer)
+        def start_upload():
+            if running[0]: return
+            try:
+                port = int(values['port'].get()) if values['port'].get().strip() else 0
+                destination = Destination(values['protocol'].get(), values['host'].get().strip(),
+                    values['username'].get().strip(), values['password'].get(), values['directory'].get().strip(), port)
+                from delivery import validate
+                validate(destination)
+            except (ValueError, TypeError) as exc:
+                messagebox.showerror('Upload settings', str(exc), parent=dialog)
+                return
+            running[0] = True
+            upload_button.configure(state='disabled')
+            close_button.configure(state='disabled')
+            status.set('Connecting…')
+            def work():
+                try:
+                    count = upload_files(paths, destination,
+                        progress=lambda *event: transfer_events.put(('progress', event)))
+                    transfer_events.put(('done', count))
+                except Exception as exc:
+                    transfer_events.put(('error', str(exc)))
+            self.pool.submit(work)
+        upload_button.configure(command=start_upload)
+        dialog.protocol('WM_DELETE_WINDOW', lambda: None if running[0] else dialog.destroy())
+        poll_transfer()
 
     def csv_export(self):
         if not self.save(): return
