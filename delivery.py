@@ -1,4 +1,4 @@
-"""Upload selected photographs to FTP, FTPS, SFTP, or PhotoShelter incoming FTP.
+"""Upload selected photographs to FTP, FTPS, or SFTP.
 Passwords are held in memory for the transfer and are never saved to disk.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ class Destination:
     port: int = 0
 
 def validate(destination):
-    if destination.protocol not in ("FTP", "FTPS", "SFTP", "PhotoShelter"):
+    if destination.protocol not in ("FTP", "FTPS", "SFTP"):
         raise ValueError("Unsupported transfer protocol.")
     if not destination.host.strip() or not destination.username.strip():
         raise ValueError("A server and username are required.")
@@ -59,8 +59,6 @@ def upload_files(paths, destination, progress=None, retries=2):
     return total
 
 def _ftp_one(path, dest, directory):
-    # PhotoShelter documents incoming FTP, not an authenticated public upload API.
-    # Treat PhotoShelter as an ordinary FTP destination with user-supplied credentials.
     ftp_class = FTP_TLS if dest.protocol == "FTPS" else FTP
     port = dest.port or 21
     with ftp_class() as client:
