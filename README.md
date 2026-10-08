@@ -1,6 +1,6 @@
 # Contact Sheet
 
-An open-source desktop photo culling and captioning app, built around the first pass through a news or sports assignment. Version **0.1.0 — prototype**. MIT licensed; no accounts, cloud uploads, subscription, analytics, or AI features.
+An open-source desktop photo culling and captioning app, built around the first pass through a news or sports assignment. Version **0.3.0 — prototype**. MIT licensed; no accounts, cloud uploads, subscription, analytics, or AI features.
 
 This is an independent project, not affiliated with Photo Mechanic or Camera Bits. It is a starting point for a simpler workflow, not a feature-complete replacement.
 
@@ -115,3 +115,38 @@ Command/Control-click selects several photos; Shift-click selects a range. Use E
 Edit IPTC fields opens eight scrollable sections. Repeated entries such as locations, artwork, image creators, registry entries and licensors have an Edit rows form. List fields use semicolons. Enumerated rights and media properties accept standard PLUS or IPTC URI values. Metadata is stored in XMP sidecars; originals are never rewritten.
 
 Download Apple Silicon, Intel Mac, Windows or Linux builds from the v0.2.0 release once the build workflow finishes. Mac: extract the ZIP and open ContactSheet.app. Windows: extract the entire ZIP and open ContactSheet.exe inside its folder. Linux: extract the tar.gz and run ContactSheet/ContactSheet.
+
+## Version 0.3
+
+Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
+
+The Export selected button has been removed. Open in… offers Photoshop, Photo Craft and Other editor. Choose the installed application the first time; named editor choices are remembered independently.
+
+[Download version 0.3.0](https://github.com/calvertphoto/contact-sheet./releases/tag/v0.3.0).
+
+## Upload selected photos (development branch)
+
+Select one or more photographs and choose **Upload selected…**. Choose FTP, FTPS,
+SFTP, or PhotoShelter, then enter server address, username, password, optional port,
+and existing destination folder. Transfers run in the background, sequentially,
+with two automatic retries. The window reports per-file progress and errors.
+
+- **FTPS** uses TLS for both authentication and file transfers and is the preferred
+  option when the destination supports it. **SFTP** uses SSH and requires that the
+  server's host key already be trusted in your system SSH known-hosts file.
+- **FTP and the PhotoShelter preset** use unencrypted FTP. Credentials and images
+  can be exposed in transit; use only where specifically required and on networks
+  you trust. Passwords are only held for the current transfer, not written to a
+  settings file. We do not currently store destination presets.
+- **PhotoShelter for Photographers:** enable incoming FTP and obtain account-specific
+  FTP credentials from PhotoShelter. Incoming FTP requires an eligible plan; consult
+  [PhotoShelter instructions](https://support.photoshelter.com/hc/en-us/articles/203373550-FTP-Incoming).
+- **PhotoShelter for Brands:** an administrator/editor must create incoming-FTP
+  credentials for a gallery/collection. [Brand upload instructions](https://support.photoshelterbrands.com/hc/en-us/articles/115000046673-Upload-with-Incoming-FTP-Admin-Editor).
+- Uploading a file with the same filename may overwrite an existing remote file,
+  depending on the server. Confirm your remote folder contents first.
+- This first implementation uploads original selected files as-is. It does not
+  embed XMP sidecar edits into them or automatically transmit sidecar files.
+  It is not a PhotoShelter API/gallery-management integration.
+
+This feature is in the development branch and **not part of v0.3.0 downloads**.

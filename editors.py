@@ -13,21 +13,26 @@ def config_path():
         return Path(os.environ.get('LOCALAPPDATA', Path.home()))/'ContactSheet'/'settings.json'
     return Path(os.environ.get('XDG_CONFIG_HOME', Path.home()/'.config'))/'contact-sheet'/'settings.json'
 
-def saved_editor():
+def saved_editor(name=None):
     try:
-        value = json.loads(config_path().read_text()).get('editor', '')
+        settings = json.loads(config_path().read_text())
+        value = settings.get('editors', {}).get(name, '') if name else settings.get('editor', '')
         path = Path(value)
         return path if value and path.exists() else None
     except (OSError, ValueError, TypeError):
         return None
 
-def remember_editor(path):
+def remember_editor(path, name=None):
     target = config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix='.settings-')
     try:
         with os.fdopen(fd, 'w') as out:
-            json.dump({'editor': str(Path(path).resolve())}, out)
+            try: settings = json.loads(target.read_text())
+            except (OSError, ValueError): settings = {}
+            if name: settings.setdefault('editors', {})[name] = str(Path(path).resolve())
+            else: settings['editor'] = str(Path(path).resolve())
+            json.dump(settings, out)
         os.replace(temp, target)
     finally:
         Path(temp).unlink(missing_ok=True)
@@ -79,3 +84,15 @@ def open_in_editor(paths, editor):
             # Editors commonly stay open for hours; launching must not wait for exit.
             subprocess.Popen(prefix + batch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return len(paths)
+
+
+def named_editor(name):
+    saved = saved_editor(name)
+    if saved: return saved
+    if sys.platform == 'darwin':
+        patterns = ['Adobe Photoshop*.app','Adobe Photoshop*/Adobe Photoshop*.app'] if name == 'Photoshop' else ['Photo Craft.app','PhotoCraft.app','Photo Craft*/Photo Craft*.app']
+        for folder in [Path('/Applications'),Path.home()/'Applications']:
+            for pattern in patterns:
+                matches = sorted(folder.glob(pattern),reverse=True)
+                if matches: return matches[0]
+    return None

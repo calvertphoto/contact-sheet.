@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: macos-14
             label: macOS-Apple-Silicon
             rawpy: 0.27.1
             icon: icns
@@ -46,8 +46,12 @@ jobs:
           target = os.path.join(os.environ['RUNNER_TEMP'], 'contact-sheet')
           url = 'https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '.git'
           subprocess.run(['git', 'clone', '--no-checkout', url, target], check=True)
-          subprocess.run(['git', '-C', target, 'checkout', os.environ['GITHUB_SHA']], check=True)
+          ref = os.environ.get('PR_HEAD_SHA') or os.environ['GITHUB_SHA']
+          subprocess.run(['git', '-C', target, 'fetch', '--depth=1', 'origin', ref], check=True)
+          subprocess.run(['git', '-C', target, 'checkout', 'FETCH_HEAD'], check=True)
           PYCODE
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}/contact-sheet
@@ -69,7 +73,26 @@ jobs:
           fi
       - name: Build standalone application
         working-directory: ${{ runner.temp }}/contact-sheet
-        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy --hidden-import PIL._tkinter_finder app.py
+        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy --hidden-import PIL._tkinter_finder --osx-bundle-identifier com.calvertphoto.contactsheet app.py
+      - name: Validate and sign macOS application
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}/contact-sheet
+        run: |
+          APP="dist/ContactSheet.app"
+          plutil -lint "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.4.0" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$APP/Contents/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 4" "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          test -x "$APP/Contents/MacOS/ContactSheet"
+          file "$APP/Contents/MacOS/ContactSheet"
+      - name: Test macOS Launch Services open
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}/contact-sheet
+        run: |
+          open "dist/ContactSheet.app"
+          sleep 5
+          pgrep -fl ContactSheet || true
       - name: Check packaged app starts
         working-directory: ${{ runner.temp }}/contact-sheet
         run: |
@@ -99,7 +122,7 @@ jobs:
             ${{ runner.temp }}/contact-sheet/dist/*.zip
             ${{ runner.temp }}/contact-sheet/dist/*.tar.gz
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/work/contact-sheet-0.2'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -113,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view v0.2.0 >/dev/null 2>&1; then
-            gh release create v0.2.0 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.2.0" --notes "Multiple selection, Photoshop or other editor handoff, gray interface, contact-sheet icon, and expanded IPTC sections. Download the package for your computer, extract it, and open ContactSheet. No Python installation required. Unsigned prototype; macOS builds are not notarized. Saves metadata to XMP sidecars without rewriting original photos. Structured IPTC entries currently use JSON objects."
+          if ! gh release view v0.4.0 >/dev/null 2>&1; then
+            gh release create v0.4.0 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.4.0" --notes "Contact Sheet 0.4.0 test release. Adds date format selection (YYYYMMDD or DDMMYY), FTP/FTPS/SFTP/PhotoShelter incoming FTP upload, retry/progress, and macOS bundle packaging improvements. PhotoShelter transfers use incoming FTP; credentials are not stored. PhotoShelter and FTP are unencrypted. Unsigned/not notarized macOS prototype; test with copied photos."
           fi
-          gh release upload v0.2.0 downloads/ContactSheet-*/* --clobber
+          gh release upload v0.4.0 downloads/ContactSheet-*/* --clobber

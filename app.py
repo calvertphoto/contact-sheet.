@@ -10,15 +10,17 @@ from tkinter import ttk, filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from PIL import ImageTk
+from renaming import capture_date, rename_plan, apply_rename
+from delivery import Destination, upload_files
 from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
 from selection import PhotoSelection
-from editors import saved_editor, remember_editor, open_in_editor
+from editors import saved_editor, remember_editor, open_in_editor, named_editor
 from core import photos, preview, load_metadata, save_metadata, export_photos, empty_metadata
 
 class ContactSheet(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Contact Sheet 0.2.0 — Cull • Caption • Edit')
+        self.title('Contact Sheet 0.3.0 — Cull • Caption • Edit')
         self.geometry('1380x860')
         self.minsize(1000, 680)
         self.configure(bg='#d4d4d4')
@@ -27,6 +29,7 @@ class ContactSheet(tk.Tk):
         self.selection = PhotoSelection()
         self.editor = saved_editor()
         self.metadata = {}
+        self.capture_dates = {}
         self.errors = {}
         self.current = None
         self.folder = None
@@ -68,9 +71,17 @@ class ContactSheet(tk.Tk):
         bar.pack(fill='x')
         ttk.Label(bar, text='CONTACT SHEET', font=('Helvetica', 17, 'bold')).pack(side='left', padx=(0, 18))
         ttk.Button(bar, text='Open folder', command=self.open_folder).pack(side='left')
-        ttk.Button(bar, text='Export selected', command=self.export_selected).pack(side='left', padx=6)
+        ttk.Button(bar, text='Rename selected…', command=self.rename_selected).pack(side='left', padx=6)
         ttk.Button(bar, text='Export picks', command=self.export).pack(side='left')
-        ttk.Button(bar, text='Open in app', command=self.open_selected_in_editor).pack(side='left', padx=6)
+        ttk.Button(bar, text='Upload selected…', command=self.upload_selected).pack(side='left', padx=6)
+        editor_button = ttk.Menubutton(bar, text='Open in…')
+        editor_menu = tk.Menu(editor_button, tearoff=False)
+        editor_menu.add_command(label='Photoshop', command=lambda: self.open_selected_in_editor('Photoshop'))
+        editor_menu.add_command(label='Photo Craft', command=lambda: self.open_selected_in_editor('Photo Craft'))
+        editor_menu.add_separator()
+        editor_menu.add_command(label='Other editor…', command=self.open_selected_in_editor)
+        editor_button.configure(menu=editor_menu)
+        editor_button.pack(side='left', padx=6)
         ttk.Button(bar, text='Caption CSV', command=self.csv_export).pack(side='left')
         ttk.Button(bar, text='Shortcuts', command=self.help).pack(side='right')
         body = ttk.Panedwindow(self, orient='horizontal')
@@ -106,6 +117,8 @@ class ContactSheet(tk.Tk):
         ttk.Button(nav, text='Page ›', command=lambda: self.change_page(1)).pack(side='right')
         self.filename = ttk.Label(center, text='Choose a photo', font=('Helvetica', 13, 'bold'))
         self.filename.pack(anchor='w', pady=(0, 8))
+        self.capture_label = ttk.Label(center, text='Date captured: —')
+        self.capture_label.pack(anchor='w', pady=(0,8))
         self.canvas = tk.Canvas(center, background='#a8a8a8', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<ButtonPress-1>', lambda e: self.canvas.scan_mark(e.x, e.y))
@@ -135,7 +148,7 @@ class ContactSheet(tk.Tk):
         self.editor_label = ttk.Label(right, text=self.editor.name if self.editor else 'Choose an editor with Open in app', wraplength=260)
         self.editor_label.pack(anchor='w', pady=(12, 4))
         ttk.Button(right, text='Change editor…', command=self.choose_editor).pack(fill='x')
-        ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nExport copies selected photos or picks.\nOpen in app sends selected originals.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
+        ttk.Label(right, text='Metadata saves to XMP sidecars.\nOriginal photos are never rewritten.\n\nPick = green label; reject = −1 rating.\nRename selected previews new names.\nExport picks copies marked photos.\nOpen in app sends selected originals.', wraplength=260, padding=(0, 16, 0, 0)).pack(anchor='w')
         ttk.Label(self, textvariable=self.status, padding=8).pack(fill='x')
 
     def edit_iptc(self):
@@ -415,6 +428,9 @@ class ContactSheet(tk.Tk):
         for name, var in self.fields.items(): var.set(', '.join(data[name]) if name=='keywords' else data[name])
         self.dirty = False
         self.filename.config(text=path.name)
+        if path not in self.capture_dates: self.capture_dates[path] = capture_date(path)
+        date = self.capture_dates[path]
+        self.capture_label.config(text='Date captured: ' + (date.strftime('%Y-%m-%d %H:%M:%S') if date else 'Unavailable'))
         if path in self.visible: self.page = self.visible.index(path)//self.page_size
         self.render_grid()
         self.show_preview()
@@ -477,6 +493,28 @@ class ContactSheet(tk.Tk):
                         self.canvas.delete('all')
                         self.filename.config(text='No supported photos in this folder')
                         self.caption.delete('1.0', 'end')
+                elif kind == 'renamed':
+                    mapping, dialog = payload
+                    self.generation += 1
+                    self.preview_token += 1
+                    current = mapping.get(self.current,self.current)
+                    self.paths = sorted([mapping.get(p,p) for p in self.paths],key=lambda p:p.name.casefold())
+                    self.metadata = {mapping.get(p,p):d for p,d in self.metadata.items()}
+                    self.capture_dates = {mapping.get(p,p):d for p,d in self.capture_dates.items()}
+                    self.errors = {mapping.get(p,p):d for p,d in self.errors.items()}
+                    selected = {mapping.get(p,p) for p in self.selection.selected}
+                    self.selection.anchor = mapping.get(self.selection.anchor,self.selection.anchor)
+                    self.selection.selected = selected
+                    self.current = None
+                    self.cache.clear(); self.pending.clear()
+                    self.filter_photos()
+                    if current in self.visible: self.select(current)
+                    self.selection.selected = selected.intersection(self.visible); self.render_grid()
+                    dialog.destroy()
+                    self.status.set(f'Renamed {len(mapping)} photos and their sidecars.')
+                elif kind == 'rename_error':
+                    error,dialog = payload; dialog.destroy()
+                    messagebox.showerror('Rename stopped',error)
                 elif kind == 'error': messagebox.showerror('Operation failed', payload)
                 elif kind == 'editor': self.status.set(payload)
                 elif kind == 'editor_error': messagebox.showerror('Could not open editor', payload)
@@ -510,10 +548,6 @@ class ContactSheet(tk.Tk):
         if not self.save(): return
         self.copy_export(self.picks(), 'picks')
 
-    def export_selected(self):
-        if not self.save(): return
-        self.copy_export(self.selected_paths(), 'selected photos')
-
     def copy_export(self, paths, description):
         if any(p in self.errors for p in paths):
             messagebox.showerror('Metadata needs attention', 'One or more photos has unreadable metadata. Resolve the sidecar error before exporting.'); return
@@ -531,13 +565,14 @@ class ContactSheet(tk.Tk):
                 self.results.put(('export_error', generation, 'Some files may have been copied before stopping. ' + str(exc)))
         self.pool.submit(work)
 
-    def choose_editor(self):
+    def choose_editor(self, name=None):
         if sys.platform == 'darwin':
             options = dict(title='Choose Photoshop or another photo editor', initialdir='/Applications', filetypes=[('Applications', '*.app')])
         elif sys.platform == 'win32':
             options = dict(title='Choose your photo editor', filetypes=[('Applications', '*.exe')])
         else:
             options = dict(title='Choose your photo editor executable')
+        if name: options['title'] = 'Choose the installed ' + name + ' application'
         path = filedialog.askopenfilename(**options)
         if not path: return None
         editor = Path(path)
@@ -546,17 +581,17 @@ class ContactSheet(tk.Tk):
         self.editor = editor
         self.editor_label.config(text=editor.name)
         try:
-            remember_editor(editor)
+            remember_editor(editor, name)
         except OSError:
             self.status.set('Editor chosen for this session; could not save the preference.')
         return editor
 
-    def open_selected_in_editor(self):
+    def open_selected_in_editor(self, name=None):
         if not self.save(): return
         paths = self.selected_paths()
         if not paths:
             messagebox.showinfo('No photos selected', 'Select one or more photos first. Use Cmd/Ctrl-click or Shift-click to select several.'); return
-        editor = self.editor if self.editor and self.editor.exists() else self.choose_editor()
+        editor = (named_editor(name) or self.choose_editor(name)) if name else (self.editor if self.editor and self.editor.exists() else self.choose_editor())
         if not editor: return
         self.status.set(f'Opening {len(paths)} photos in {editor.name}…')
         generation = self.generation
@@ -567,6 +602,162 @@ class ContactSheet(tk.Tk):
             except Exception as exc:
                 self.results.put(('editor_error', generation, str(exc)))
         self.pool.submit(work)
+
+    def rename_selected(self):
+        if not self.save(): return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('Select photos', 'Select one or more photos to rename.'); return
+        if any(path in self.errors for path in paths):
+            messagebox.showerror('Metadata needs attention', 'Resolve the unreadable sidecar before renaming.'); return
+        dialog = tk.Toplevel(self); dialog.title('Rename selected photos'); dialog.geometry('850x600')
+        dialog.transient(self); dialog.grab_set()
+        form = ttk.Frame(dialog,padding=12); form.pack(fill='x')
+        prefix = tk.StringVar(value='Photo'); start = tk.StringVar(value='1'); digits = tk.StringVar(value='4')
+        include_date = tk.BooleanVar(value=True)
+        date_format = tk.StringVar(value='YYYYMMDD')
+        for text,var in [('Name prefix',prefix),('Start number',start),('Sequence digits',digits)]:
+            ttk.Label(form,text=text).pack(anchor='w'); ttk.Entry(form,textvariable=var).pack(fill='x',pady=(0,6))
+        ttk.Checkbutton(form,text='Include date captured',variable=include_date).pack(anchor='w')
+        date_row = ttk.Frame(form); date_row.pack(fill='x',pady=(4,6))
+        ttk.Label(date_row,text='Date format').pack(side='left',padx=(0,12))
+        ttk.Combobox(date_row,textvariable=date_format,values=('YYYYMMDD','DDMMYY'),state='readonly',width=14).pack(side='left')
+        example = tk.StringVar()
+        ttk.Label(form,textvariable=example,wraplength=800).pack(anchor='w',pady=10)
+        def update_example(*_):
+            sample = '20261008' if date_format.get() == 'YYYYMMDD' else '081026'
+            middle = '_'+sample if include_date.get() else ''
+            example.set(f'Example: Photo{middle}_0001.jpg. Existing files are never overwritten. Sidecars follow renamed photos.')
+        date_format.trace_add('write',update_example)
+        include_date.trace_add('write',update_example)
+        update_example()
+        tree = ttk.Treeview(dialog,columns=('old','new','date'),show='headings')
+        for key,title in [('old','Current filename'),('new','New filename'),('date','Date captured')]: tree.heading(key,text=title); tree.column(key,width=250)
+        tree.pack(fill='both',expand=True,padx=12)
+        note = tk.StringVar(value='Preview filenames before renaming.'); ttk.Label(dialog,textvariable=note,wraplength=800,padding=12).pack(fill='x')
+        plan = [None]; busy = [False]
+        buttons = ttk.Frame(dialog,padding=12); buttons.pack(fill='x')
+        def invalidate(*args): plan[0] = None; rename_button.configure(state='disabled')
+        for var in [prefix,start,digits,include_date,date_format]: var.trace_add('write',invalidate)
+        def preview_names():
+            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),'%Y%m%d' if date_format.get() == 'YYYYMMDD' else '%d%m%y')
+            except Exception as exc:
+                note.set(str(exc)); invalidate(); return
+            tree.delete(*tree.get_children())
+            for old,new,date in plan[0].photos: tree.insert('', 'end',values=(old.name,new.name,date.strftime('%Y-%m-%d %H:%M:%S') if date else 'Unavailable'))
+            note.set(f'{len(paths)} photos ready. Rename changes filenames in this folder.'); rename_button.configure(state='normal')
+        def run():
+            if plan[0] is None or busy[0]: return
+            busy[0] = True; rename_button.configure(state='disabled'); preview_button.configure(state='disabled'); cancel_button.configure(state='disabled')
+            for child in form.winfo_children():
+                try: child.configure(state='disabled')
+                except tk.TclError: pass
+            note.set('Renaming photos and sidecars…')
+            def work():
+                try: self.results.put(('renamed',self.generation,(apply_rename(plan[0]),dialog)))
+                except Exception as exc: self.results.put(('rename_error',self.generation,(str(exc),dialog)))
+            self.pool.submit(work)
+        dialog.protocol('WM_DELETE_WINDOW',lambda: None if busy[0] else dialog.destroy())
+        preview_button = ttk.Button(buttons,text='Preview names',command=preview_names); preview_button.pack(side='left')
+        rename_button = ttk.Button(buttons,text='Rename photos',command=run,state='disabled'); rename_button.pack(side='right')
+        cancel_button = ttk.Button(buttons,text='Cancel',command=dialog.destroy); cancel_button.pack(side='right',padx=6)
+        preview_names()
+
+    def upload_selected(self):
+        if not self.save(): return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('Upload photos', 'Select one or more images first.')
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title('Upload selected photos')
+        dialog.geometry('600x530')
+        dialog.transient(self)
+        dialog.grab_set()
+        form = ttk.Frame(dialog, padding=14)
+        form.pack(fill='both', expand=True)
+        values = {
+            'protocol': tk.StringVar(value='FTPS'),
+            'host': tk.StringVar(),
+            'port': tk.StringVar(),
+            'username': tk.StringVar(),
+            'password': tk.StringVar(),
+            'directory': tk.StringVar(),
+        }
+        ttk.Label(form, text=f'{len(paths)} selected photograph(s)', font=('Helvetica', 12, 'bold')).pack(anchor='w')
+        ttk.Label(form, text='PhotoShelter uses incoming FTP credentials created in your PhotoShelter account. FTP sends credentials without encryption; use FTPS or SFTP when your server supports it.', wraplength=550).pack(anchor='w', pady=(6,12))
+        for key, title in [('protocol','Destination type'),('host','Server address'),('port','Port (optional)'),('username','Username'),('password','Password'),('directory','Remote folder (optional)')]:
+            ttk.Label(form, text=title).pack(anchor='w')
+            if key == 'protocol':
+                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP','PhotoShelter'))
+                def change_protocol(event=None):
+                    if values['protocol'].get() == 'PhotoShelter':
+                        values['host'].set('ftp.photoshelter.com')
+                        values['port'].set('21')
+                control.bind('<<ComboboxSelected>>', change_protocol)
+            else:
+                control = ttk.Entry(form, textvariable=values[key], show='*' if key == 'password' else '')
+            control.pack(fill='x', pady=(0,5))
+        status = tk.StringVar(value='Ready to upload. Files are transmitted individually.')
+        ttk.Label(form, textvariable=status, wraplength=550).pack(anchor='w', pady=(8,4))
+        progressbar = ttk.Progressbar(form, mode='determinate', maximum=len(paths))
+        progressbar.pack(fill='x', pady=(0,10))
+        controls = ttk.Frame(form)
+        controls.pack(fill='x')
+        upload_button = ttk.Button(controls, text='Start upload')
+        upload_button.pack(side='right')
+        close_button = ttk.Button(controls, text='Close', command=dialog.destroy)
+        close_button.pack(side='right', padx=7)
+        transfer_events = queue.Queue()
+        running = [False]
+        def poll_transfer():
+            if not dialog.winfo_exists(): return
+            try:
+                while True:
+                    kind, payload = transfer_events.get_nowait()
+                    if kind == 'progress':
+                        done, total, name, error = payload
+                        progressbar['value'] = done
+                        status.set(f'{done} of {total} sent: {name}' if not error else f'Failed: {name} — {error}')
+                    elif kind == 'done':
+                        status.set(f'Successfully uploaded {payload} photographs.')
+                        upload_button.configure(state='normal')
+                        close_button.configure(state='normal')
+                        running[0] = False
+                    elif kind == 'error':
+                        status.set(str(payload))
+                        upload_button.configure(state='normal')
+                        close_button.configure(state='normal')
+                        running[0] = False
+            except queue.Empty:
+                pass
+            dialog.after(100, poll_transfer)
+        def start_upload():
+            if running[0]: return
+            try:
+                port = int(values['port'].get()) if values['port'].get().strip() else 0
+                destination = Destination(values['protocol'].get(), values['host'].get().strip(),
+                    values['username'].get().strip(), values['password'].get(), values['directory'].get().strip(), port)
+                from delivery import validate
+                validate(destination)
+            except (ValueError, TypeError) as exc:
+                messagebox.showerror('Upload settings', str(exc), parent=dialog)
+                return
+            running[0] = True
+            upload_button.configure(state='disabled')
+            close_button.configure(state='disabled')
+            status.set('Connecting…')
+            def work():
+                try:
+                    count = upload_files(paths, destination,
+                        progress=lambda *event: transfer_events.put(('progress', event)))
+                    transfer_events.put(('done', count))
+                except Exception as exc:
+                    transfer_events.put(('error', str(exc)))
+            self.pool.submit(work)
+        upload_button.configure(command=start_upload)
+        dialog.protocol('WM_DELETE_WINDOW', lambda: None if running[0] else dialog.destroy())
+        poll_transfer()
 
     def csv_export(self):
         if not self.save(): return
@@ -604,7 +795,7 @@ class ContactSheet(tk.Tk):
             self.status.set(f'Updated {count} picks.')
         except Exception as exc: messagebox.showerror('Batch stopped', f'Updated {count} photos before stopping: {exc}')
     def help(self):
-        messagebox.showinfo('Contact Sheet shortcuts', 'Cmd/Ctrl-click: add or remove a photo\nShift-click: select a range across pages\nCmd/Ctrl+A: select all filtered photos\nEscape: clear selection\nOpen in app: send selected originals to an editor\n← / →: previous / next\n0–5: star rating\nP: green pick\nX: reject\nU: clear rating and pick\nZ: fit / 100% preview, drag to pan\n⌘/Ctrl+S: save caption\n⌘/Ctrl+O: open folder\n\nEdits save before changing photos or closing.\nShortcuts pause while typing in fields.\nOpen folders are not scanned recursively.')
+        messagebox.showinfo('Contact Sheet shortcuts', 'Cmd/Ctrl-click: add or remove a photo\nShift-click: select a range across pages\nCmd/Ctrl+A: select all filtered photos\nEscape: clear selection\nOpen in…: Photoshop, Photo Craft, or another editor\nRename selected: sequence and capture date\n← / →: previous / next\n0–5: star rating\nP: green pick\nX: reject\nU: clear rating and pick\nZ: fit / 100% preview, drag to pan\n⌘/Ctrl+S: save caption\n⌘/Ctrl+O: open folder\n\nEdits save before changing photos or closing.\nShortcuts pause while typing in fields.\nOpen folders are not scanned recursively.')
     def close(self):
         if not self.save(): return
         self.pool.shutdown(wait=False, cancel_futures=True)
