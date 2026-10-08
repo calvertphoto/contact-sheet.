@@ -122,7 +122,7 @@ jobs:
             ${{ runner.temp }}/contact-sheet/dist/*.zip
             ${{ runner.temp }}/contact-sheet/dist/*.tar.gz
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/work/contact-sheet-0.2'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -136,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view v0.3.0 >/dev/null 2>&1; then
-            gh release create v0.3.0 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.3.0" --notes "Multiple selection, Photoshop or other editor handoff, gray interface, contact-sheet icon, and expanded IPTC sections. Download the package for your computer, extract it, and open ContactSheet. No Python installation required. Unsigned prototype; macOS builds are not notarized. Saves metadata to XMP sidecars without rewriting original photos. Batch rename with capture dates and sequence numbers; Photoshop, Photo Craft and other editor options."
+          if ! gh release view v0.4.0 >/dev/null 2>&1; then
+            gh release create v0.4.0 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.4.0" --notes "Contact Sheet 0.4.0 test release. Adds date format selection (YYYYMMDD or DDMMYY), FTP/FTPS/SFTP/PhotoShelter incoming FTP upload, retry/progress, and macOS bundle packaging improvements. PhotoShelter transfers use incoming FTP; credentials are not stored. PhotoShelter and FTP are unencrypted. Unsigned/not notarized macOS prototype; test with copied photos."
           fi
-          gh release upload v0.3.0 downloads/ContactSheet-*/* --clobber
+          gh release upload v0.4.0 downloads/ContactSheet-*/* --clobber
