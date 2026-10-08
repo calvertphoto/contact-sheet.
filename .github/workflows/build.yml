@@ -46,8 +46,12 @@ jobs:
           target = os.path.join(os.environ['RUNNER_TEMP'], 'contact-sheet')
           url = 'https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '.git'
           subprocess.run(['git', 'clone', '--no-checkout', url, target], check=True)
-          subprocess.run(['git', '-C', target, 'checkout', os.environ['GITHUB_SHA']], check=True)
+          ref = os.environ.get('PR_HEAD_SHA') or os.environ['GITHUB_SHA']
+          subprocess.run(['git', '-C', target, 'fetch', '--depth=1', 'origin', ref], check=True)
+          subprocess.run(['git', '-C', target, 'checkout', 'FETCH_HEAD'], check=True)
           PYCODE
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}/contact-sheet
