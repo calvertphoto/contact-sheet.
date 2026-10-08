@@ -26,7 +26,7 @@ class EditorTests(unittest.TestCase):
             with patch('editors.sys.platform','darwin'),patch('editors.subprocess.run') as run:
                 run.return_value.returncode=0
                 self.assertEqual(open_in_editor(paths,editor),2)
-                self.assertEqual(run.call_args.args[0],['/usr/bin/open','-a',str(editor),*[str(p) for p in paths]])
+                self.assertEqual(run.call_args.args[0],['/usr/bin/open','-a',str(editor.resolve()),*[str(p.resolve()) for p in paths]])
     def test_missing_image_prevents_launch(self):
         with tempfile.TemporaryDirectory() as folder:
             editor=Path(folder)/'editor'; editor.touch()

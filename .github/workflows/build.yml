@@ -35,15 +35,19 @@ jobs:
         shell: bash
         working-directory: source
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: source
-      - name: Copy source to a portable build path
-        working-directory: ${{ runner.temp }}
-        run: python -c "import os,shutil; shutil.copytree(os.path.join(os.environ['GITHUB_WORKSPACE'],'source'), os.path.join(os.environ['RUNNER_TEMP'],'contact-sheet'))"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Fetch source into a portable build path
+        working-directory: ${{ runner.temp }}
+        run: |
+          python - <<'PYCODE'
+          import os, subprocess
+          target = os.path.join(os.environ['RUNNER_TEMP'], 'contact-sheet')
+          url = 'https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '.git'
+          subprocess.run(['git', 'clone', '--no-checkout', url, target], check=True)
+          subprocess.run(['git', '-C', target, 'checkout', os.environ['GITHUB_SHA']], check=True)
+          PYCODE
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}/contact-sheet
