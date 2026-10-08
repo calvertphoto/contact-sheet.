@@ -69,7 +69,7 @@ jobs:
           fi
       - name: Build standalone application
         working-directory: ${{ runner.temp }}/contact-sheet
-        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy app.py
+        run: python -m PyInstaller --noconfirm --clean --windowed --name ContactSheet --icon assets/contact-sheet.${{ matrix.icon }} --add-data "assets:assets" --collect-all rawpy --hidden-import PIL._tkinter_finder app.py
       - name: Check packaged app starts
         working-directory: ${{ runner.temp }}/contact-sheet
         run: |
