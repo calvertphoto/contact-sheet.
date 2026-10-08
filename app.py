@@ -685,16 +685,11 @@ class ContactSheet(tk.Tk):
             'directory': tk.StringVar(),
         }
         ttk.Label(form, text=f'{len(paths)} selected photograph(s)', font=('Helvetica', 12, 'bold')).pack(anchor='w')
-        ttk.Label(form, text='PhotoShelter uses incoming FTP credentials created in your PhotoShelter account. FTP sends credentials without encryption; use FTPS or SFTP when your server supports it.', wraplength=550).pack(anchor='w', pady=(6,12))
+        ttk.Label(form, text='FTP transfers are unencrypted; use FTPS or SFTP when your server supports it.', wraplength=550).pack(anchor='w', pady=(6,12))
         for key, title in [('protocol','Destination type'),('host','Server address'),('port','Port (optional)'),('username','Username'),('password','Password'),('directory','Remote folder (optional)')]:
             ttk.Label(form, text=title).pack(anchor='w')
             if key == 'protocol':
-                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP','PhotoShelter'))
-                def change_protocol(event=None):
-                    if values['protocol'].get() == 'PhotoShelter':
-                        values['host'].set('ftp.photoshelter.com')
-                        values['port'].set('21')
-                control.bind('<<ComboboxSelected>>', change_protocol)
+                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP'))
             else:
                 control = ttk.Entry(form, textvariable=values[key], show='*' if key == 'password' else '')
             control.pack(fill='x', pady=(0,5))
