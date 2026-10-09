@@ -20,7 +20,7 @@ from core import photos, preview, load_metadata, save_metadata, export_photos, e
 class ContactSheet(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Contact Sheet 0.3.0 — Cull • Caption • Edit')
+        self.title('Contact Sheet 0.4.2 — Cull • Caption • Edit')
         self.geometry('1380x860')
         self.minsize(1000, 680)
         self.configure(bg='#d4d4d4')
