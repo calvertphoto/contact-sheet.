@@ -126,6 +126,16 @@ The Export selected button has been removed. Open in… offers Photoshop, Photo 
 
 ## Upload selected photos (version 0.4.1)
 
-Select photos and choose **Upload selected…**. The supported destinations are **FTP**, **FTPS** and **SFTP**. Enter your server address, username, password, optional port and remote folder. Transfers are sequential, with progress and two retry attempts. Passwords are not persisted. FTPS encrypts authentication and transfer traffic; SFTP uses SSH with existing trusted host keys. Standard FTP is unencrypted. Remote servers may overwrite files with matching names. The app sends selected original images as-is, not XMP sidecars. Use copies for initial tests.
+Select photos and choose **Upload selected…**. The supported destinations are **FTP**, **FTPS**, **SFTP** and **PhotoShelter**. Enter your server address, username, password, optional port and remote folder. Transfers are sequential, with progress and two retry attempts. Passwords are not persisted. FTPS encrypts authentication and transfer traffic; SFTP uses SSH with existing trusted host keys. Standard FTP is unencrypted. Remote servers may overwrite files with matching names. The app sends selected original images as-is, not XMP sidecars. Use copies for initial tests.
 
 [Download the latest release](https://github.com/calvertphoto/contact-sheet./releases/latest).
+
+
+### PhotoShelter incoming FTP
+
+1. Create and enable an Incoming FTP user in your PhotoShelter account. Depending on the interface, use Admin → Media → Upload Methods → Incoming FTP, Upload → Incoming FTP, or Settings → Incoming FTP in the new Library. Save the generated FTP username and password; these are separate from your account login. Select a destination gallery or collection in PhotoShelter.
+2. In Contact Sheet, select images, open **Upload selected…**, and choose **PhotoShelter**. The app sets **ftp.photoshelter.com**, port **21**, plain FTP, passive mode, and one simultaneous connection. Enter the FTP credentials. Passwords remain in memory and are not saved.
+3. Leave **Gallery name** blank to use the configured destination directly. To upload the selected images inside a named folder, enter a single gallery name. The app creates that remote folder; PhotoShelter handles the gallery structure according to the incoming user's destination. Choose a collection destination when uploading folders. This uploads selected photographs, not entire local folders recursively.
+4. Start the upload and wait for completion. Then verify that the images have processed in your PhotoShelter Library / Media Center. Check the configured destination or the **Incoming FTP** collection when no destination was selected. Transfer completion confirms server receipt, not completion of PhotoShelter processing.
+
+The corrected hostname is `ftp.photoshelter.com`, without a URL prefix. See [PhotoShelter's incoming FTP instructions](https://support.photoshelter.com/hc/en-us/articles/203373550-FTP-Incoming).
