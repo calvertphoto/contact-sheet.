@@ -1,12 +1,17 @@
-"""Upload selected photographs to FTP, FTPS, or SFTP.
+"""Upload selected photographs to FTP, FTPS, SFTP, or PhotoShelter.
 Passwords are held in memory for the transfer and are never saved to disk.
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from ftplib import FTP, FTP_TLS
+from ftplib import FTP, FTP_TLS, error_perm
+from contextlib import nullcontext
+from threading import Lock
 from pathlib import Path
 import posixpath
 import time
+
+PHOTOSHELTER_HOST = "ftp.photoshelter.com"
+_photoshelter_lock = Lock()
 
 @dataclass(frozen=True)
 class Destination:
@@ -18,7 +23,7 @@ class Destination:
     port: int = 0
 
 def validate(destination):
-    if destination.protocol not in ("FTP", "FTPS", "SFTP"):
+    if destination.protocol not in ("FTP", "FTPS", "SFTP", "PhotoShelter"):
         raise ValueError("Unsupported transfer protocol.")
     if not destination.host.strip() or not destination.username.strip():
         raise ValueError("A server and username are required.")
@@ -27,9 +32,19 @@ def validate(destination):
     directory = destination.directory.strip()
     if "\\x00" in directory or "\\r" in directory or "\\n" in directory:
         raise ValueError("Invalid remote directory.")
+    if destination.protocol == "PhotoShelter":
+        if destination.host != PHOTOSHELTER_HOST or destination.port not in (0, 21):
+            raise ValueError("PhotoShelter uses ftp.photoshelter.com on port 21.")
+        if directory and (directory in (".", "..") or any(c in directory for c in "/\\")):
+            raise ValueError("Enter a gallery name without path separators.")
     return directory
 
 def upload_files(paths, destination, progress=None, retries=2):
+    # Serialize PhotoShelter sessions across separate upload dialogs.
+    with _photoshelter_lock if destination.protocol == "PhotoShelter" else nullcontext():
+        return _upload_files(paths, destination, progress, retries)
+
+def _upload_files(paths, destination, progress=None, retries=2):
     """Upload in order; report completion only on successful server acknowledgement.
 
     Does not overwrite remote files deliberately: a destination may replace same-name
@@ -67,7 +82,14 @@ def _ftp_one(path, dest, directory):
         if dest.protocol == 'FTPS':
             client.prot_p()  # encrypt the data channel as well as the login
         client.set_pasv(True)
-        if directory: client.cwd(directory)
+        if directory:
+            if dest.protocol == "PhotoShelter":
+                try:
+                    client.mkd(directory)
+                except error_perm:
+                    # An existing directory is valid; cwd still verifies access.
+                    pass
+            client.cwd(directory)
         with path.open("rb") as file:
             client.storbinary("STOR " + path.name, file, blocksize=128 * 1024)
 
@@ -91,3 +113,4 @@ def _sftp_one(path, dest, directory):
             sftp.close()
     finally:
         client.close()
+

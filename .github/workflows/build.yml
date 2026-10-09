@@ -80,8 +80,8 @@ jobs:
         run: |
           APP="dist/ContactSheet.app"
           plutil -lint "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.4.1" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$APP/Contents/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 4" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.4.2" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 5" "$APP/Contents/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 5" "$APP/Contents/Info.plist"
           codesign --force --deep --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           test -x "$APP/Contents/MacOS/ContactSheet"
@@ -136,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view v0.4.1 >/dev/null 2>&1; then
-            gh release create v0.4.1 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.4.1" --notes "Contact Sheet 0.4.1. Removes PhotoShelter upload option. FTP, FTPS, SFTP and date renaming options remain. Mac app has ad-hoc signing but is not notarized; test uploads with copies."
+          if ! gh release view v0.4.2 >/dev/null 2>&1; then
+            gh release create v0.4.2 --target "${{ github.sha }}" --prerelease --title "Contact Sheet 0.4.2" --notes "Contact Sheet 0.4.2. Restores PhotoShelter incoming FTP with passive mode, one connection, and optional gallery folders. FTP, FTPS, SFTP and date renaming options remain. Mac app has ad-hoc signing but is not notarized; test uploads with copies."
           fi
-          gh release upload v0.4.1 downloads/ContactSheet-*/* --clobber
+          gh release upload v0.4.2 downloads/ContactSheet-*/* --clobber

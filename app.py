@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from PIL import ImageTk
 from renaming import capture_date, rename_plan, apply_rename
-from delivery import Destination, upload_files
+from delivery import Destination, upload_files, PHOTOSHELTER_HOST
 from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
 from selection import PhotoSelection
 from editors import saved_editor, remember_editor, open_in_editor, named_editor
@@ -20,7 +20,7 @@ from core import photos, preview, load_metadata, save_metadata, export_photos, e
 class ContactSheet(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Contact Sheet 0.3.0 — Cull • Caption • Edit')
+        self.title('Contact Sheet 0.4.2 — Cull • Caption • Edit')
         self.geometry('1380x860')
         self.minsize(1000, 680)
         self.configure(bg='#d4d4d4')
@@ -671,7 +671,7 @@ class ContactSheet(tk.Tk):
             return
         dialog = tk.Toplevel(self)
         dialog.title('Upload selected photos')
-        dialog.geometry('600x530')
+        dialog.geometry('600x680')
         dialog.transient(self)
         dialog.grab_set()
         form = ttk.Frame(dialog, padding=14)
@@ -686,13 +686,37 @@ class ContactSheet(tk.Tk):
         }
         ttk.Label(form, text=f'{len(paths)} selected photograph(s)', font=('Helvetica', 12, 'bold')).pack(anchor='w')
         ttk.Label(form, text='FTP transfers are unencrypted; use FTPS or SFTP when your server supports it.', wraplength=550).pack(anchor='w', pady=(6,12))
+        fields = {}
+        folder_label = None
         for key, title in [('protocol','Destination type'),('host','Server address'),('port','Port (optional)'),('username','Username'),('password','Password'),('directory','Remote folder (optional)')]:
-            ttk.Label(form, text=title).pack(anchor='w')
+            label = ttk.Label(form, text=title)
+            label.pack(anchor='w')
+            if key == 'directory': folder_label = label
             if key == 'protocol':
-                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP'))
+                control = ttk.Combobox(form, textvariable=values[key], state='readonly', values=('FTP','FTPS','SFTP','PhotoShelter'))
             else:
                 control = ttk.Entry(form, textvariable=values[key], show='*' if key == 'password' else '')
             control.pack(fill='x', pady=(0,5))
+            fields[key] = control
+        instructions = tk.StringVar()
+        ttk.Label(form, textvariable=instructions, wraplength=550).pack(anchor='w', pady=(6,4))
+        def destination_changed(event=None):
+            photoshelter = values['protocol'].get() == 'PhotoShelter'
+            for key in ('host', 'port'):
+                fields[key].configure(state='normal')
+            if photoshelter:
+                values['host'].set(PHOTOSHELTER_HOST)
+                values['port'].set('21')
+                for key in ('host', 'port'):
+                    fields[key].configure(state='disabled')
+                instructions.set('Create and enable an Incoming FTP user in PhotoShelter: Admin → Media → Upload Methods, or Settings → Incoming FTP in the new Library. Use those FTP credentials here. Passive FTP, one connection. After upload, verify your images in the Library destination or Incoming FTP collection.')
+            else:
+                if values['host'].get() == PHOTOSHELTER_HOST:
+                    values['host'].set('')
+                    values['port'].set('')
+                instructions.set('')
+            folder_label.configure(text='Gallery name (optional)' if photoshelter else 'Remote folder (optional)')
+        fields['protocol'].bind('<<ComboboxSelected>>', destination_changed)
         status = tk.StringVar(value='Ready to upload. Files are transmitted individually.')
         ttk.Label(form, textvariable=status, wraplength=550).pack(anchor='w', pady=(8,4))
         progressbar = ttk.Progressbar(form, mode='determinate', maximum=len(paths))
@@ -705,6 +729,7 @@ class ContactSheet(tk.Tk):
         close_button.pack(side='right', padx=7)
         transfer_events = queue.Queue()
         running = [False]
+        transfer_protocol = [None]
         def poll_transfer():
             if not dialog.winfo_exists(): return
             try:
@@ -715,7 +740,7 @@ class ContactSheet(tk.Tk):
                         progressbar['value'] = done
                         status.set(f'{done} of {total} sent: {name}' if not error else f'Failed: {name} — {error}')
                     elif kind == 'done':
-                        status.set(f'Successfully uploaded {payload} photographs.')
+                        status.set(f'Successfully uploaded {payload} photographs.' + (' Verify processing in your PhotoShelter Library.' if transfer_protocol[0] == 'PhotoShelter' else ''))
                         upload_button.configure(state='normal')
                         close_button.configure(state='normal')
                         running[0] = False
@@ -738,6 +763,7 @@ class ContactSheet(tk.Tk):
             except (ValueError, TypeError) as exc:
                 messagebox.showerror('Upload settings', str(exc), parent=dialog)
                 return
+            transfer_protocol[0] = destination.protocol
             running[0] = True
             upload_button.configure(state='disabled')
             close_button.configure(state='disabled')
@@ -803,3 +829,4 @@ if __name__ == '__main__':
     if '--smoke-test' in sys.argv:
         app.after(1000, app.close)
     app.mainloop()
+
