@@ -124,6 +124,16 @@ The Export selected button has been removed. Open in… offers Photoshop, Photo 
 
 [Download version 0.3.0](https://github.com/calvertphoto/contact-sheet./releases/tag/v0.3.0).
 
+## Import a prefilled IPTC/XMP template (proposed feature)
+
+1. Open a folder, then select the photographs to receive the metadata (Cmd/Ctrl-click, Shift-click, or Select all).
+2. Choose **Import IPTC template…** and open an **.xmp** template (also accepts XMP XML in an **.xml** file).
+3. Review the list of populated fields and confirm. The app applies those fields to all selected images in one operation.
+
+The feature supports populated caption, byline, copyright, keywords, credit, location, contact, licensing, and other fields from the IPTC editor's existing XMP mappings. **Blank or absent fields are ignored**; populated fields overwrite the selected images' corresponding values. Ratings and pick/reject labels are always preserved. Metadata is saved in separate XMP sidecar files; original photograph bytes remain unchanged.
+
+This is **XMP metadata template import**, not an importer for binary legacy IPTC-IIM `.iptc` files, Photoshop actions or CSV. Confirm that a template exported from your photo editor is an XMP file before importing. Batch writes are per-photo, not transactional; if a write fails, already updated photos remain updated. As with other metadata changes, the app does not embed IPTC in JPEGs during upload.
+
 ## Upload selected photos (version 0.4.1)
 
 Select photos and choose **Upload selected…**. The supported destinations are **FTP**, **FTPS**, **SFTP** and **PhotoShelter**. Enter your server address, username, password, optional port and remote folder. Transfers are sequential, with progress and two retry attempts. Passwords are not persisted. FTPS encrypts authentication and transfer traffic; SFTP uses SSH with existing trusted host keys. Standard FTP is unencrypted. Remote servers may overwrite files with matching names. The app sends selected original images as-is, not XMP sidecars. Use copies for initial tests.
