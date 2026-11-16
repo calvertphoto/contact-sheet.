@@ -31,6 +31,22 @@ class RenamingTests(unittest.TestCase):
         new=apply_rename(plan)[self.paths[0]]
         self.assertEqual(load_metadata(new)['caption'],'Reno Aces')
 
+    def test_all_date_format_combinations(self):
+        formats = {
+            '%Y%m%d': '20261008',
+            '%Y%d%m': '20260810',
+            '%d%m%Y': '08102026',
+            '%m%d%Y': '10082026',
+            '%d%m%y': '081026',
+            '%m%d%y': '100826',
+            '%y%m%d': '261008',
+            '%y%d%m': '260810',
+        }
+        for date_format, expected in formats.items():
+            with self.subTest(date_format=date_format):
+                plan = rename_plan([self.paths[0]], 'Aces', 1, 4, True, date_format)
+                self.assertEqual(plan.photos[0][1].name, f'Aces_{expected}_0001.jpg')
+
     def test_missing_date_does_not_use_file_modification_time(self):
         path=self.root/'no-date.jpg';Image.new('RGB',(10,10)).save(path)
         self.assertIsNone(capture_date(path))
