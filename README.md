@@ -118,7 +118,9 @@ Download Apple Silicon, Intel Mac, Windows or Linux builds from the v0.2.0 relea
 
 ## Version 0.3
 
-Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
+Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg.
+
+Date format choices in the rename dialog: `YYYYMMDD` (20261008), `YYYYDDMM` (20260810), `DDMMYYYY` (08102026), `MMDDYYYY` (10082026), `DDMMYY` (081026), `MMDDYY` (100826), `YYMMDD` (261008), and `YYDDMM` (260810). Examples use October 8, 2026. Filename previews update to reflect the choice. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
 
 The Export selected button has been removed. Open in… offers Photoshop, Photo Craft and Other editor. Choose the installed application the first time; named editor choices are remembered independently.
 
