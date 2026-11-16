@@ -1,6 +1,7 @@
 """Contact Sheet: a local, open-source culling and captioning desktop app."""
 from __future__ import annotations
 import csv
+import xml.etree.ElementTree as ET
 import json
 import queue
 import sys
@@ -13,6 +14,7 @@ from PIL import ImageTk
 from renaming import capture_date, rename_plan, apply_rename
 from delivery import Destination, upload_files, PHOTOSHELTER_HOST
 from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
+from template_import import read_template
 from selection import PhotoSelection
 from editors import saved_editor, remember_editor, open_in_editor, named_editor
 from core import photos, preview, load_metadata, save_metadata, export_photos, empty_metadata
@@ -132,6 +134,7 @@ class ContactSheet(tk.Tk):
         self.rating_text.pack(anchor='w')
         ttk.Label(right, text='CAPTION & METADATA', font=('Helvetica', 12, 'bold')).pack(anchor='w')
         ttk.Button(right, text='Edit IPTC fields…', command=self.edit_iptc).pack(fill='x', pady=8)
+        ttk.Button(right, text='Import IPTC template…', command=self.import_iptc_template).pack(fill='x', pady=(0, 8))
         ttk.Label(right, text='Description / caption').pack(anchor='w')
         self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#f6f6f6', fg='#202020', undo=True)
         self.caption.pack(fill='x')
@@ -796,6 +799,61 @@ class ContactSheet(tk.Tk):
                     writer.writerow([safe(path.name), d['rating'], safe(d['label']), safe(d['caption']), safe(d['creator']), safe(d['copyright']), safe('; '.join(d['keywords']))])
             self.status.set(f'Exported captions for {len(self.visible)} visible photos.')
         except Exception as exc: messagebox.showerror('CSV export failed', str(exc))
+    def import_iptc_template(self):
+        if not self.folder or not self.save():
+            return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('Select photographs', 'Select one or more photographs to receive the template.')
+            return
+        file = filedialog.askopenfilename(
+            title='Choose an IPTC/XMP metadata template',
+            filetypes=[('XMP metadata templates', '*.xmp *.xml'), ('All files', '*.*')])
+        if not file:
+            return
+        try:
+            fields = read_template(file)
+        except (OSError, ValueError, ET.ParseError) as exc:
+            messagebox.showerror('Cannot import template', str(exc))
+            return
+        problems = [p.name for p in paths if p in self.errors]
+        if problems:
+            messagebox.showerror('Metadata needs attention',
+                                 'Fix unreadable sidecars before importing:\n' + '\n'.join(problems[:10]))
+            return
+        labels = {key: FIELDS[key][1] if key in FIELDS else 'Description / caption'
+                  for key in fields}
+        summary = '\n'.join(f'• {labels[key]}' for key in fields)
+        if not messagebox.askyesno(
+                'Apply IPTC template',
+                f'Apply {len(fields)} populated metadata fields to {len(paths)} selected photos?\n\n'
+                f'{summary}\n\n'
+                'These fields will REPLACE existing values on the selected photos. '
+                'Blank or missing fields in the template are ignored. Ratings and picks remain unchanged. '
+                'Original images will not be modified.'):
+            return
+        count = 0
+        try:
+            for path in paths:
+                data = dict(self.metadata[path])
+                data.update(fields)
+                save_metadata(path, data)
+                self.metadata[path] = data
+                count += 1
+        except Exception as exc:
+            messagebox.showerror('Import stopped',
+                                 f'Updated {count} of {len(paths)} photos before stopping: {exc}')
+        if self.current in self.metadata:
+            data = self.metadata[self.current]
+            self.caption.delete('1.0', 'end')
+            self.caption.insert('1.0', data['caption'])
+            self.caption.edit_modified(False)
+            for name, var in self.fields.items():
+                var.set(', '.join(data[name]) if name == 'keywords' else data[name])
+            self.dirty = False
+        self.filter_photos()
+        self.status.set(f'Applied IPTC template to {count} of {len(paths)} selected photos.')
+
     def batch_caption(self):
         if self.current is None or not self.save(): return
         paths = self.picks()
