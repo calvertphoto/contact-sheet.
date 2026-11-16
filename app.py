@@ -618,17 +618,19 @@ class ContactSheet(tk.Tk):
         form = ttk.Frame(dialog,padding=12); form.pack(fill='x')
         prefix = tk.StringVar(value='Photo'); start = tk.StringVar(value='1'); digits = tk.StringVar(value='4')
         include_date = tk.BooleanVar(value=True)
+        date_formats = {'YYYYMMDD': '%Y%m%d', 'YYYYDDMM': '%Y%d%m', 'DDMMYYYY': '%d%m%Y', 'MMDDYYYY': '%m%d%Y', 'DDMMYY': '%d%m%y', 'MMDDYY': '%m%d%y', 'YYMMDD': '%y%m%d', 'YYDDMM': '%y%d%m'}
         date_format = tk.StringVar(value='YYYYMMDD')
         for text,var in [('Name prefix',prefix),('Start number',start),('Sequence digits',digits)]:
             ttk.Label(form,text=text).pack(anchor='w'); ttk.Entry(form,textvariable=var).pack(fill='x',pady=(0,6))
         ttk.Checkbutton(form,text='Include date captured',variable=include_date).pack(anchor='w')
         date_row = ttk.Frame(form); date_row.pack(fill='x',pady=(4,6))
         ttk.Label(date_row,text='Date format').pack(side='left',padx=(0,12))
-        ttk.Combobox(date_row,textvariable=date_format,values=('YYYYMMDD','DDMMYY'),state='readonly',width=14).pack(side='left')
+        ttk.Combobox(date_row,textvariable=date_format,values=tuple(date_formats),state='readonly',width=14).pack(side='left')
         example = tk.StringVar()
         ttk.Label(form,textvariable=example,wraplength=800).pack(anchor='w',pady=10)
         def update_example(*_):
-            sample = '20261008' if date_format.get() == 'YYYYMMDD' else '081026'
+            from datetime import datetime
+            sample = datetime(2026, 10, 8).strftime(date_formats[date_format.get()])
             middle = '_'+sample if include_date.get() else ''
             example.set(f'Example: Photo{middle}_0001.jpg. Existing files are never overwritten. Sidecars follow renamed photos.')
         date_format.trace_add('write',update_example)
@@ -643,7 +645,7 @@ class ContactSheet(tk.Tk):
         def invalidate(*args): plan[0] = None; rename_button.configure(state='disabled')
         for var in [prefix,start,digits,include_date,date_format]: var.trace_add('write',invalidate)
         def preview_names():
-            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),'%Y%m%d' if date_format.get() == 'YYYYMMDD' else '%d%m%y')
+            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),date_formats[date_format.get()])
             except Exception as exc:
                 note.set(str(exc)); invalidate(); return
             tree.delete(*tree.get_children())
