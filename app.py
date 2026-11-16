@@ -1,6 +1,7 @@
 """Contact Sheet: a local, open-source culling and captioning desktop app."""
 from __future__ import annotations
 import csv
+import xml.etree.ElementTree as ET
 import json
 import queue
 import sys
@@ -13,6 +14,7 @@ from PIL import ImageTk
 from renaming import capture_date, rename_plan, apply_rename
 from delivery import Destination, upload_files, PHOTOSHELTER_HOST
 from iptc import GROUPS, FIELDS, STRUCTURE_HINTS
+from template_import import read_template
 from selection import PhotoSelection
 from editors import saved_editor, remember_editor, open_in_editor, named_editor
 from core import photos, preview, load_metadata, save_metadata, export_photos, empty_metadata
@@ -20,7 +22,7 @@ from core import photos, preview, load_metadata, save_metadata, export_photos, e
 class ContactSheet(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('Contact Sheet 0.4.2 — Cull • Caption • Edit')
+        self.title('Contact Sheet 0.4.3 — Cull • Caption • Edit')
         self.geometry('1380x860')
         self.minsize(1000, 680)
         self.configure(bg='#d4d4d4')
@@ -132,6 +134,7 @@ class ContactSheet(tk.Tk):
         self.rating_text.pack(anchor='w')
         ttk.Label(right, text='CAPTION & METADATA', font=('Helvetica', 12, 'bold')).pack(anchor='w')
         ttk.Button(right, text='Edit IPTC fields…', command=self.edit_iptc).pack(fill='x', pady=8)
+        ttk.Button(right, text='Import IPTC template…', command=self.import_iptc_template).pack(fill='x', pady=(0, 8))
         ttk.Label(right, text='Description / caption').pack(anchor='w')
         self.caption = tk.Text(right, height=9, width=29, wrap='word', bg='#f6f6f6', fg='#202020', undo=True)
         self.caption.pack(fill='x')
@@ -615,17 +618,19 @@ class ContactSheet(tk.Tk):
         form = ttk.Frame(dialog,padding=12); form.pack(fill='x')
         prefix = tk.StringVar(value='Photo'); start = tk.StringVar(value='1'); digits = tk.StringVar(value='4')
         include_date = tk.BooleanVar(value=True)
+        date_formats = {'YYYYMMDD': '%Y%m%d', 'YYYYDDMM': '%Y%d%m', 'DDMMYYYY': '%d%m%Y', 'MMDDYYYY': '%m%d%Y', 'DDMMYY': '%d%m%y', 'MMDDYY': '%m%d%y', 'YYMMDD': '%y%m%d', 'YYDDMM': '%y%d%m'}
         date_format = tk.StringVar(value='YYYYMMDD')
         for text,var in [('Name prefix',prefix),('Start number',start),('Sequence digits',digits)]:
             ttk.Label(form,text=text).pack(anchor='w'); ttk.Entry(form,textvariable=var).pack(fill='x',pady=(0,6))
         ttk.Checkbutton(form,text='Include date captured',variable=include_date).pack(anchor='w')
         date_row = ttk.Frame(form); date_row.pack(fill='x',pady=(4,6))
         ttk.Label(date_row,text='Date format').pack(side='left',padx=(0,12))
-        ttk.Combobox(date_row,textvariable=date_format,values=('YYYYMMDD','DDMMYY'),state='readonly',width=14).pack(side='left')
+        ttk.Combobox(date_row,textvariable=date_format,values=tuple(date_formats),state='readonly',width=14).pack(side='left')
         example = tk.StringVar()
         ttk.Label(form,textvariable=example,wraplength=800).pack(anchor='w',pady=10)
         def update_example(*_):
-            sample = '20261008' if date_format.get() == 'YYYYMMDD' else '081026'
+            from datetime import datetime
+            sample = datetime(2026, 10, 8).strftime(date_formats[date_format.get()])
             middle = '_'+sample if include_date.get() else ''
             example.set(f'Example: Photo{middle}_0001.jpg. Existing files are never overwritten. Sidecars follow renamed photos.')
         date_format.trace_add('write',update_example)
@@ -640,7 +645,7 @@ class ContactSheet(tk.Tk):
         def invalidate(*args): plan[0] = None; rename_button.configure(state='disabled')
         for var in [prefix,start,digits,include_date,date_format]: var.trace_add('write',invalidate)
         def preview_names():
-            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),'%Y%m%d' if date_format.get() == 'YYYYMMDD' else '%d%m%y')
+            try: plan[0] = rename_plan(paths,prefix.get(),int(start.get()),int(digits.get()),include_date.get(),date_formats[date_format.get()])
             except Exception as exc:
                 note.set(str(exc)); invalidate(); return
             tree.delete(*tree.get_children())
@@ -796,6 +801,61 @@ class ContactSheet(tk.Tk):
                     writer.writerow([safe(path.name), d['rating'], safe(d['label']), safe(d['caption']), safe(d['creator']), safe(d['copyright']), safe('; '.join(d['keywords']))])
             self.status.set(f'Exported captions for {len(self.visible)} visible photos.')
         except Exception as exc: messagebox.showerror('CSV export failed', str(exc))
+    def import_iptc_template(self):
+        if not self.folder or not self.save():
+            return
+        paths = self.selected_paths()
+        if not paths:
+            messagebox.showinfo('Select photographs', 'Select one or more photographs to receive the template.')
+            return
+        file = filedialog.askopenfilename(
+            title='Choose an IPTC/XMP metadata template',
+            filetypes=[('XMP metadata templates', '*.xmp *.xml'), ('All files', '*.*')])
+        if not file:
+            return
+        try:
+            fields = read_template(file)
+        except (OSError, ValueError, ET.ParseError) as exc:
+            messagebox.showerror('Cannot import template', str(exc))
+            return
+        problems = [p.name for p in paths if p in self.errors]
+        if problems:
+            messagebox.showerror('Metadata needs attention',
+                                 'Fix unreadable sidecars before importing:\n' + '\n'.join(problems[:10]))
+            return
+        labels = {key: FIELDS[key][1] if key in FIELDS else 'Description / caption'
+                  for key in fields}
+        summary = '\n'.join(f'• {labels[key]}' for key in fields)
+        if not messagebox.askyesno(
+                'Apply IPTC template',
+                f'Apply {len(fields)} populated metadata fields to {len(paths)} selected photos?\n\n'
+                f'{summary}\n\n'
+                'These fields will REPLACE existing values on the selected photos. '
+                'Blank or missing fields in the template are ignored. Ratings and picks remain unchanged. '
+                'Original images will not be modified.'):
+            return
+        count = 0
+        try:
+            for path in paths:
+                data = dict(self.metadata[path])
+                data.update(fields)
+                save_metadata(path, data)
+                self.metadata[path] = data
+                count += 1
+        except Exception as exc:
+            messagebox.showerror('Import stopped',
+                                 f'Updated {count} of {len(paths)} photos before stopping: {exc}')
+        if self.current in self.metadata:
+            data = self.metadata[self.current]
+            self.caption.delete('1.0', 'end')
+            self.caption.insert('1.0', data['caption'])
+            self.caption.edit_modified(False)
+            for name, var in self.fields.items():
+                var.set(', '.join(data[name]) if name == 'keywords' else data[name])
+            self.dirty = False
+        self.filter_photos()
+        self.status.set(f'Applied IPTC template to {count} of {len(paths)} selected photos.')
+
     def batch_caption(self):
         if self.current is None or not self.save(): return
         paths = self.picks()

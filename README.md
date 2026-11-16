@@ -118,11 +118,23 @@ Download Apple Silicon, Intel Mac, Windows or Linux builds from the v0.2.0 relea
 
 ## Version 0.3
 
-Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
+Rename selected previews a new filename for each selected photo, using a name prefix, optional capture date, starting sequence number and digit count. For example, Aces_20261008_0001.jpg.
+
+Date format choices in the rename dialog: `YYYYMMDD` (20261008), `YYYYDDMM` (20260810), `DDMMYYYY` (08102026), `MMDDYYYY` (10082026), `DDMMYY` (081026), `MMDDYY` (100826), `YYMMDD` (261008), and `YYDDMM` (260810). Examples use October 8, 2026. Filename previews update to reflect the choice. Capture dates come from camera EXIF or XMP metadata; modification dates are never substituted. Missing capture dates stop the date-based rename until you turn off the date option. Renaming keeps image bytes and moves associated sidecars with the new names. Collision checks refuse existing filenames.
 
 The Export selected button has been removed. Open in… offers Photoshop, Photo Craft and Other editor. Choose the installed application the first time; named editor choices are remembered independently.
 
 [Download version 0.3.0](https://github.com/calvertphoto/contact-sheet./releases/tag/v0.3.0).
+
+## Import a prefilled IPTC/XMP template (proposed feature)
+
+1. Open a folder, then select the photographs to receive the metadata (Cmd/Ctrl-click, Shift-click, or Select all).
+2. Choose **Import IPTC template…** and open an **.xmp** template (also accepts XMP XML in an **.xml** file).
+3. Review the list of populated fields and confirm. The app applies those fields to all selected images in one operation.
+
+The feature supports populated caption, byline, copyright, keywords, credit, location, contact, licensing, and other fields from the IPTC editor's existing XMP mappings. **Blank or absent fields are ignored**; populated fields overwrite the selected images' corresponding values. Ratings and pick/reject labels are always preserved. Metadata is saved in separate XMP sidecar files; original photograph bytes remain unchanged.
+
+This is **XMP metadata template import**, not an importer for binary legacy IPTC-IIM `.iptc` files, Photoshop actions or CSV. Confirm that a template exported from your photo editor is an XMP file before importing. Batch writes are per-photo, not transactional; if a write fails, already updated photos remain updated. As with other metadata changes, the app does not embed IPTC in JPEGs during upload.
 
 ## Upload selected photos (version 0.4.1)
 
